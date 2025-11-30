@@ -1,0 +1,80 @@
+name: romgi
+description: "Android ROM browser and downloader for emulation handhelds"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP client with download progress support
+  dio: ^5.4.0
+
+  # State management
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+
+  # Image caching for box art
+  cached_network_image: ^3.3.1
+
+  # Local database for tracking downloads
+  sqflite: ^2.3.2
+  path: ^1.9.0
+
+  # Storage paths
+  path_provider: ^2.1.2
+
+  # ZIP extraction
+  archive: ^3.6.1
+
+  # Permissions handling
+  permission_handler: ^11.3.0
+
+  # UUID generation for download tasks
+  uuid: ^4.3.3
+
+  # Local notifications
+  flutter_local_notifications: ^18.0.1
+
+  # Background/foreground service for downloads
+  flutter_foreground_task: ^8.11.0
+
+  # Persistent settings storage
+  shared_preferences: ^2.2.2
+
+  # Folder picker for download locations
+  file_picker: ^8.0.0
+
+  # URL launcher for opening links
+  url_launcher: ^6.2.5
+
+  # Secure storage for auth tokens/cookies
+  flutter_secure_storage: ^9.2.4
+
+  # WebView for OAuth/login flows
+  webview_flutter: ^4.10.0
+
+  # Disk space information
+  disk_space_plus: ^0.2.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  riverpod_generator: ^2.3.9
+  build_runner: ^2.4.8
+  flutter_launcher_icons: ^0.14.3
+
+# App icon configuration
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  adaptive_icon_background: "#673AB7"
+
+flutter:
+  uses-material-design: true
