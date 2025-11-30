@@ -2,9 +2,12 @@
 
 **Easy-to-use ROM downloader for Android devices**
 
-<!-- TODO: Add screenshots
-Screenshot 1 Screenshot 2 Screenshot 3
--->
+<p align="center">
+  <img src="screenshots/search.png" width="200" alt="Search">
+  <img src="screenshots/detail.png" width="200" alt="Game Detail">
+  <img src="screenshots/downloads.png" width="200" alt="Downloads">
+  <img src="screenshots/settings.png" width="200" alt="Settings">
+</p>
 
 A standalone Android application for browsing, downloading, and managing ROMs on Android devices. Perfect for emulation handhelds like Retroid Pocket, Anbernic, AYN Odin, and more.
 
