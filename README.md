@@ -54,15 +54,17 @@ romgi uses a bottom navigation bar with four main sections:
 
 ## Download Locations
 
-By default, romgi saves downloads to the app's storage directory, organized by platform:
+By default, romgi saves downloads to a public folder accessible by any file manager and emulator:
 
 ```
-/storage/emulated/0/Android/data/com.caprado.romgi/files/
+/storage/emulated/0/Download/Roms/
 ├── snes/
 ├── n64/
 ├── psx/
 └── ...
 ```
+
+On first launch, you'll be prompted to grant storage permission ("Allow access to manage all files") to enable saving to this location.
 
 You can customize this in **Settings > Download Locations**:
 
