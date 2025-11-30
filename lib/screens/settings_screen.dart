@@ -268,7 +268,7 @@ class SettingsScreen extends ConsumerWidget {
                 const ListTile(
                   leading: Icon(Icons.info_outline),
                   title: Text('romgi'),
-                  subtitle: Text('Version 0.1.0'),
+                  subtitle: Text('Version 1.0.0'),
                 ),
 
                 const ListTile(

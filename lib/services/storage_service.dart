@@ -3,12 +3,38 @@ import 'dart:io';
 import 'package:disk_space_plus/disk_space_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class StorageService {
-  static const String _defaultRomFolder = 'romgi';
+  static const String _defaultRomFolder = 'Roms';
+
+  /// Default public storage path on Android
+  static const String defaultAndroidPath = '/storage/emulated/0/Download/Roms';
 
   String? _customDownloadPath;
   Map<String, String> _platformPaths = {};
+
+  /// Check if we have storage permission
+  Future<bool> hasStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+
+    // Check for MANAGE_EXTERNAL_STORAGE on Android 11+
+    final status = await Permission.manageExternalStorage.status;
+    return status.isGranted;
+  }
+
+  /// Request storage permission
+  Future<bool> requestStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+
+    final status = await Permission.manageExternalStorage.request();
+    return status.isGranted;
+  }
+
+  /// Open app settings for manual permission grant
+  Future<void> openAppSettings() async {
+    await openAppSettings();
+  }
 
   /// Set platform-specific paths
   void setPlatformPaths(Map<String, String> paths) {
@@ -27,16 +53,34 @@ class StorageService {
   /// Get the base download directory
   Future<Directory> getDownloadDirectory() async {
     if (_customDownloadPath != null) {
-      return Directory(_customDownloadPath!);
+      final customDir = Directory(_customDownloadPath!);
+      if (!await customDir.exists()) {
+        await customDir.create(recursive: true);
+      }
+      return customDir;
     }
 
-    // Use external storage on Android, documents on other platforms
-    Directory? baseDir;
+    // On Android, use public Download/Roms folder
     if (Platform.isAndroid) {
-      baseDir = await getExternalStorageDirectory();
+      final downloadDir = Directory(defaultAndroidPath);
+      try {
+        if (!await downloadDir.exists()) {
+          await downloadDir.create(recursive: true);
+        }
+        return downloadDir;
+      } catch (e) {
+        // Fall back to app-specific storage if permission denied
+        final fallbackDir = await getExternalStorageDirectory();
+        final romDir = Directory(p.join(fallbackDir!.path, _defaultRomFolder));
+        if (!await romDir.exists()) {
+          await romDir.create(recursive: true);
+        }
+        return romDir;
+      }
     }
-    baseDir ??= await getApplicationDocumentsDirectory();
 
+    // Non-Android platforms use documents directory
+    final baseDir = await getApplicationDocumentsDirectory();
     final downloadDir = Directory(p.join(baseDir.path, _defaultRomFolder));
     if (!await downloadDir.exists()) {
       await downloadDir.create(recursive: true);

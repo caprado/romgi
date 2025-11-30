@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../models/models.dart';
 import '../providers/library_provider.dart';
@@ -265,11 +266,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       return;
     }
 
-    // Show file info dialog
+    // Show file info dialog with Open with option
     if (mounted) {
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: Text(item.title),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -295,8 +296,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Close'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                final result = await OpenFilex.open(item.filePath!);
+                if (result.type != ResultType.done && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result.type == ResultType.noAppToOpen
+                            ? 'No app found to open this file type'
+                            : 'Could not open file: ${result.message}',
+                      ),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Open with...'),
             ),
           ],
         ),

@@ -60,6 +60,9 @@ dependencies:
   # Disk space information
   disk_space_plus: ^0.2.6
 
+  # Open files with external apps
+  open_filex: ^4.5.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'screens/screens.dart';
 import 'providers/providers.dart';
 
@@ -72,6 +75,9 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Request storage permission on Android
+      _requestStoragePermission();
+
       // Trigger library file verification on startup
       ref.read(libraryProvider.notifier).verifyFiles();
 
@@ -79,6 +85,42 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       final notifications = ref.read(notificationServiceProvider);
       notifications.setOnTapCallback(_onNotificationTap);
     });
+  }
+
+  Future<void> _requestStoragePermission() async {
+    if (!Platform.isAndroid) return;
+
+    final status = await Permission.manageExternalStorage.status;
+    if (status.isGranted) return;
+
+    // Show explanation dialog before requesting permission
+    if (!mounted) return;
+
+    final shouldRequest = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Storage Permission'),
+        content: const Text(
+          'Romgi needs storage access to save ROMs to a location accessible by your file manager and emulators.\n\n'
+          'On the next screen, please enable "Allow access to manage all files".',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Skip'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRequest == true) {
+      await Permission.manageExternalStorage.request();
+    }
   }
 
   void _onNotificationTap(String? payload) {
