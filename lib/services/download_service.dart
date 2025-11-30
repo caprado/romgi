@@ -630,10 +630,25 @@ class DownloadService {
     if (_activeTasks.containsKey(id)) {
       _activeCancelTokens[id]?.cancel('Cancelled by user');
     }
+
+    // Remove from active tasks
+    _activeTasks.remove(id);
+    _activeCancelTokens.remove(id);
+    _pausedTaskIds.remove(id);
+    _lastSpeedUpdate.remove(id);
+    _lastBytesReceived.remove(id);
+    _downloadStartTime.remove(id);
+    _downloadStartBytes.remove(id);
+    _lastDbUpdate.remove(id);
+
     await _db.deleteDownload(id);
+
     if (_activeTasks.isEmpty) {
       await _notifications.cancelProgressNotification();
     }
+
+    // Process queue in case there are pending downloads
+    _processQueue();
   }
 
   Future<void> clearCompletedDownloads() async {

@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/models.dart';
 import '../services/services.dart';
 import 'download_provider.dart';
@@ -29,7 +31,9 @@ class LibraryState {
   }) {
     return LibraryState(
       items: items ?? this.items,
-      selectedPlatform: clearPlatform ? null : (selectedPlatform ?? this.selectedPlatform),
+      selectedPlatform: clearPlatform
+          ? null
+          : (selectedPlatform ?? this.selectedPlatform),
       searchQuery: searchQuery ?? this.searchQuery,
       isLoading: isLoading ?? this.isLoading,
       verifiedFiles: verifiedFiles ?? this.verifiedFiles,
@@ -41,15 +45,20 @@ class LibraryState {
     var result = items;
 
     if (selectedPlatform != null) {
-      result = result.where((item) => item.platform == selectedPlatform).toList();
+      result = result
+          .where((item) => item.platform == selectedPlatform)
+          .toList();
     }
 
     if (searchQuery.isNotEmpty) {
       final query = searchQuery.toLowerCase();
-      result = result.where((item) =>
-        item.title.toLowerCase().contains(query) ||
-        item.platform.toLowerCase().contains(query)
-      ).toList();
+      result = result
+          .where(
+            (item) =>
+                item.title.toLowerCase().contains(query) ||
+                item.platform.toLowerCase().contains(query),
+          )
+          .toList();
     }
 
     return result;
@@ -138,16 +147,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       }
     }
 
-    state = state.copyWith(
-      verifiedFiles: verified,
-      isLoading: false,
-    );
+    state = state.copyWith(verifiedFiles: verified, isLoading: false);
   }
 
   /// Remove entries for missing files
   Future<void> cleanupMissingFiles() async {
     for (final item in state.items) {
-      if (item.filePath != null && !state.verifiedFiles.contains(item.filePath)) {
+      if (item.filePath != null &&
+          !state.verifiedFiles.contains(item.filePath)) {
         await _db.deleteDownload(item.id);
       }
     }
@@ -155,14 +162,22 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 }
 
-final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>((ref) {
+final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>((
+  ref,
+) {
   final db = ref.watch(databaseServiceProvider);
   final storage = ref.watch(storageServiceProvider);
   return LibraryNotifier(db, storage);
 });
 
 /// Provider for all downloaded slugs (for badge display)
+/// Watches libraryProvider to auto-refresh when library changes
 final downloadedSlugsProvider = FutureProvider<Set<String>>((ref) async {
+  final libraryState = ref.watch(libraryProvider);
+  // Use library items if available (faster), otherwise fetch from db
+  if (!libraryState.isLoading && libraryState.items.isNotEmpty) {
+    return libraryState.items.map((task) => task.slug).toSet();
+  }
   final db = ref.watch(databaseServiceProvider);
   final completed = await db.getCompletedDownloads();
   return completed.map((task) => task.slug).toSet();

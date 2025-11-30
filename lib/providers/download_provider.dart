@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'internet_archive_auth_provider.dart';
+import 'library_provider.dart';
 import 'settings_provider.dart';
 
 // Service providers
@@ -246,7 +247,8 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
 });
 
 // Helper provider to check if a slug is downloaded
-final isDownloadedProvider = FutureProvider.family<bool, String>((ref, slug) async {
-  final service = ref.watch(downloadServiceProvider);
-  return service.isDownloaded(slug);
+// Uses downloadedSlugsProvider for efficient lookup and auto-refresh
+final isDownloadedProvider = Provider.family<AsyncValue<bool>, String>((ref, slug) {
+  final slugsAsync = ref.watch(downloadedSlugsProvider);
+  return slugsAsync.whenData((slugs) => slugs.contains(slug));
 });

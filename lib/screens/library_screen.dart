@@ -350,6 +350,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       await ref
           .read(libraryProvider.notifier)
           .deleteItem(item, deleteFile: false);
+      // Invalidate download status providers so search results update
+      ref.invalidate(downloadedSlugsProvider);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -359,6 +361,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       await ref
           .read(libraryProvider.notifier)
           .deleteItem(item, deleteFile: true);
+      // Invalidate download status providers so search results update
+      ref.invalidate(downloadedSlugsProvider);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
