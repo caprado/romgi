@@ -7,3 +7,4 @@ export 'platforms_provider.dart';
 export 'regions_provider.dart';
 export 'search_provider.dart';
 export 'settings_provider.dart';
+export 'update_provider.dart';

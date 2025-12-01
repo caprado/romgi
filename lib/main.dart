@@ -84,7 +84,37 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       // Set up notification tap handler
       final notifications = ref.read(notificationServiceProvider);
       notifications.setOnTapCallback(_onNotificationTap);
+
+      // Check for app updates in the background
+      _checkForUpdates();
     });
+  }
+
+  Future<void> _checkForUpdates() async {
+    // Delay slightly to not interfere with app startup
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    await ref.read(updateProvider.notifier).checkForUpdate();
+
+    // Show snackbar if update is available
+    final updateState = ref.read(updateProvider);
+    if (updateState.status == UpdateStatus.available && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Update available: v${updateState.availableUpdate?.version}',
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () {
+              ref.read(navigationTabProvider.notifier).state = NavTab.settings;
+            },
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   Future<void> _requestStoragePermission() async {

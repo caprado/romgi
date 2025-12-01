@@ -265,11 +265,9 @@ class SettingsScreen extends ConsumerWidget {
                 // About Section
                 _SectionHeader(title: 'About'),
 
-                const ListTile(
-                  leading: Icon(Icons.info_outline),
-                  title: Text('romgi'),
-                  subtitle: Text('Version 1.0.0'),
-                ),
+                const _VersionTile(),
+
+                const _UpdateTile(),
 
                 const ListTile(
                   leading: Icon(Icons.storage),
@@ -378,6 +376,160 @@ class _SectionHeader extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _VersionTile extends ConsumerWidget {
+  const _VersionTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final versionAsync = ref.watch(currentVersionProvider);
+
+    return ListTile(
+      leading: const Icon(Icons.info_outline),
+      title: const Text('Version'),
+      subtitle: versionAsync.when(
+        loading: () => const Text('Loading...'),
+        error: (_, __) => const Text('Unknown'),
+        data: (version) => Text(version),
+      ),
+    );
+  }
+}
+
+class _UpdateTile extends ConsumerWidget {
+  const _UpdateTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final updateState = ref.watch(updateProvider);
+
+    return Column(
+      children: [
+        ListTile(
+          leading: Icon(
+            _getUpdateIcon(updateState.status),
+            color: _getUpdateColor(context, updateState.status),
+          ),
+          title: Text(_getUpdateTitle(updateState.status)),
+          subtitle: Text(_getUpdateSubtitle(updateState)),
+          trailing: _buildTrailingWidget(context, ref, updateState),
+          onTap: updateState.status == UpdateStatus.idle ||
+                  updateState.status == UpdateStatus.error
+              ? () => ref.read(updateProvider.notifier).checkForUpdate()
+              : null,
+        ),
+        if (updateState.status == UpdateStatus.downloading)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(
+              value: updateState.downloadProgress,
+            ),
+          ),
+      ],
+    );
+  }
+
+  IconData _getUpdateIcon(UpdateStatus status) {
+    switch (status) {
+      case UpdateStatus.idle:
+        return Icons.system_update;
+      case UpdateStatus.checking:
+        return Icons.refresh;
+      case UpdateStatus.available:
+        return Icons.download;
+      case UpdateStatus.downloading:
+        return Icons.downloading;
+      case UpdateStatus.readyToInstall:
+        return Icons.install_mobile;
+      case UpdateStatus.error:
+        return Icons.error_outline;
+    }
+  }
+
+  Color? _getUpdateColor(BuildContext context, UpdateStatus status) {
+    switch (status) {
+      case UpdateStatus.available:
+      case UpdateStatus.readyToInstall:
+        return Theme.of(context).colorScheme.primary;
+      case UpdateStatus.error:
+        return Theme.of(context).colorScheme.error;
+      default:
+        return null;
+    }
+  }
+
+  String _getUpdateTitle(UpdateStatus status) {
+    switch (status) {
+      case UpdateStatus.idle:
+        return 'Check for Updates';
+      case UpdateStatus.checking:
+        return 'Checking for Updates...';
+      case UpdateStatus.available:
+        return 'Update Available';
+      case UpdateStatus.downloading:
+        return 'Downloading Update...';
+      case UpdateStatus.readyToInstall:
+        return 'Ready to Install';
+      case UpdateStatus.error:
+        return 'Update Check Failed';
+    }
+  }
+
+  String _getUpdateSubtitle(UpdateState state) {
+    switch (state.status) {
+      case UpdateStatus.idle:
+        return 'Tap to check for new versions';
+      case UpdateStatus.checking:
+        return 'Please wait...';
+      case UpdateStatus.available:
+        return 'Version ${state.availableUpdate?.version} is available';
+      case UpdateStatus.downloading:
+        final progress = (state.downloadProgress * 100).toInt();
+        return 'Downloading... $progress%';
+      case UpdateStatus.readyToInstall:
+        return 'Tap Install to update to ${state.availableUpdate?.version}';
+      case UpdateStatus.error:
+        return state.errorMessage ?? 'An error occurred';
+    }
+  }
+
+  Widget? _buildTrailingWidget(
+    BuildContext context,
+    WidgetRef ref,
+    UpdateState state,
+  ) {
+    switch (state.status) {
+      case UpdateStatus.checking:
+        return const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      case UpdateStatus.available:
+        return ElevatedButton(
+          onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
+          child: const Text('Download'),
+        );
+      case UpdateStatus.downloading:
+        return IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
+        );
+      case UpdateStatus.readyToInstall:
+        return ElevatedButton(
+          onPressed: () => ref.read(updateProvider.notifier).installUpdate(),
+          child: const Text('Install'),
+        );
+      case UpdateStatus.error:
+        return IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: () => ref.read(updateProvider.notifier).checkForUpdate(),
+        );
+      default:
+        return const Icon(Icons.chevron_right);
+    }
   }
 }
 

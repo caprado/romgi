@@ -63,6 +63,9 @@ dependencies:
   # Open files with external apps
   open_filex: ^4.5.0
 
+  # Package info for version checking
+  package_info_plus: ^8.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
