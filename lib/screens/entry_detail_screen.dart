@@ -62,6 +62,15 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // Track this entry as recently viewed
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(recentlyViewedProvider.notifier).addEntry(
+            slug: widget.entry.slug,
+            title: widget.entry.title,
+            platform: widget.entry.platform,
+            boxartUrl: widget.entry.boxartUrl,
+          );
+    });
   }
 
   @override
@@ -113,6 +122,13 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
           iconTheme: hasBoxart && !_isCollapsed
               ? const IconThemeData(color: Colors.white)
               : null,
+          actions: [
+            _FavoriteButton(
+              entry: entry,
+              isCollapsed: _isCollapsed,
+              hasBoxart: hasBoxart,
+            ),
+          ],
           flexibleSpace: hasBoxart
               ? FlexibleSpaceBar(
                   title: Text(
@@ -381,6 +397,70 @@ class _RegionChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FavoriteButton extends ConsumerWidget {
+  final RomEntry entry;
+  final bool isCollapsed;
+  final bool hasBoxart;
+
+  const _FavoriteButton({
+    required this.entry,
+    required this.isCollapsed,
+    required this.hasBoxart,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFavoriteAsync = ref.watch(isFavoriteProvider(entry.slug));
+
+    return isFavoriteAsync.when(
+      loading: () => const IconButton(
+        onPressed: null,
+        icon: Icon(Icons.favorite_border),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (isFavorite) {
+        final iconColor = hasBoxart && !isCollapsed ? Colors.white : null;
+        return IconButton(
+          icon: Icon(
+            isFavorite ? Icons.favorite : Icons.favorite_border,
+            color: isFavorite ? Colors.red : iconColor,
+            shadows: hasBoxart && !isCollapsed
+                ? const [
+                    Shadow(color: Colors.black, blurRadius: 4),
+                    Shadow(color: Colors.black, blurRadius: 8),
+                  ]
+                : null,
+          ),
+          onPressed: () async {
+            await ref.read(favoritesProvider.notifier).toggleFavorite(
+                  slug: entry.slug,
+                  title: entry.title,
+                  platform: entry.platform,
+                  boxartUrl: entry.boxartUrl,
+                );
+            ref.invalidate(isFavoriteProvider(entry.slug));
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    isFavorite
+                        ? 'Removed from wishlist'
+                        : 'Added to wishlist',
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+          },
+          tooltip: isFavorite ? 'Remove from wishlist' : 'Add to wishlist',
+        );
+      },
     );
   }
 }

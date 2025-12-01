@@ -6,7 +6,7 @@ import '../models/models.dart';
 class DatabaseService {
   static Database? _database;
   static const String _dbName = 'romgi.db';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   Future<Database> get database async {
     _database ??= await _initDatabase();
@@ -29,6 +29,35 @@ class DatabaseService {
     if (oldVersion < 2) {
       await db.execute(
         'ALTER TABLE downloads ADD COLUMN hidden_from_history INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (oldVersion < 3) {
+      // Add recently_viewed table
+      await db.execute('''
+        CREATE TABLE recently_viewed (
+          slug TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          boxart_url TEXT,
+          viewed_at INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX idx_recently_viewed_at ON recently_viewed(viewed_at DESC)',
+      );
+
+      // Add favorites table
+      await db.execute('''
+        CREATE TABLE favorites (
+          slug TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          boxart_url TEXT,
+          added_at INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX idx_favorites_added_at ON favorites(added_at DESC)',
       );
     }
   }
@@ -68,6 +97,34 @@ class DatabaseService {
     await db.execute('CREATE INDEX idx_downloads_slug ON downloads(slug)');
     await db.execute(
       'CREATE INDEX idx_downloads_platform ON downloads(platform)',
+    );
+
+    // Recently viewed table
+    await db.execute('''
+      CREATE TABLE recently_viewed (
+        slug TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        boxart_url TEXT,
+        viewed_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_recently_viewed_at ON recently_viewed(viewed_at DESC)',
+    );
+
+    // Favorites/Wishlist table
+    await db.execute('''
+      CREATE TABLE favorites (
+        slug TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        boxart_url TEXT,
+        added_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_favorites_added_at ON favorites(added_at DESC)',
     );
   }
 
@@ -233,5 +290,107 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return DownloadTask.fromMap(maps.first);
+  }
+
+  // ============== Recently Viewed Operations ==============
+
+  /// Add or update a recently viewed entry
+  Future<void> addRecentlyViewed({
+    required String slug,
+    required String title,
+    required String platform,
+    String? boxartUrl,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'recently_viewed',
+      {
+        'slug': slug,
+        'title': title,
+        'platform': platform,
+        'boxart_url': boxartUrl,
+        'viewed_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+
+    // Keep only last 50 entries
+    await db.execute('''
+      DELETE FROM recently_viewed WHERE slug NOT IN (
+        SELECT slug FROM recently_viewed ORDER BY viewed_at DESC LIMIT 50
+      )
+    ''');
+  }
+
+  /// Get recently viewed entries
+  Future<List<RecentlyViewed>> getRecentlyViewed({int limit = 20}) async {
+    final db = await database;
+    final maps = await db.query(
+      'recently_viewed',
+      orderBy: 'viewed_at DESC',
+      limit: limit,
+    );
+    return maps.map((map) => RecentlyViewed.fromMap(map)).toList();
+  }
+
+  /// Clear all recently viewed entries
+  Future<void> clearRecentlyViewed() async {
+    final db = await database;
+    await db.delete('recently_viewed');
+  }
+
+  // ============== Favorites/Wishlist Operations ==============
+
+  /// Add to favorites
+  Future<void> addFavorite({
+    required String slug,
+    required String title,
+    required String platform,
+    String? boxartUrl,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'favorites',
+      {
+        'slug': slug,
+        'title': title,
+        'platform': platform,
+        'boxart_url': boxartUrl,
+        'added_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  /// Remove from favorites
+  Future<void> removeFavorite(String slug) async {
+    final db = await database;
+    await db.delete('favorites', where: 'slug = ?', whereArgs: [slug]);
+  }
+
+  /// Check if entry is favorited
+  Future<bool> isFavorite(String slug) async {
+    final db = await database;
+    final result = await db.query(
+      'favorites',
+      where: 'slug = ?',
+      whereArgs: [slug],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  /// Get all favorites
+  Future<List<Favorite>> getFavorites() async {
+    final db = await database;
+    final maps = await db.query('favorites', orderBy: 'added_at DESC');
+    return maps.map((map) => Favorite.fromMap(map)).toList();
+  }
+
+  /// Get favorite count
+  Future<int> getFavoriteCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM favorites');
+    return Sqflite.firstIntValue(result) ?? 0;
   }
 }

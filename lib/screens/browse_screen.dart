@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/models.dart';
 import '../providers/providers.dart';
 import '../utils/utils.dart';
 import '../widgets/widgets.dart';
@@ -350,30 +351,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
 
     // Show initial state before any search is performed
     if (searchState.result == null) {
-      return SliverFillRemaining(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.search, size: 64, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text(
-                'Search for ROMs',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Enter a game name or use filters to browse',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[500],
-                    ),
-              ),
-            ],
-          ),
-        ),
-      );
+      return _buildRecentlyViewedSection();
     }
 
     final entries = searchState.result?.entries ?? [];
@@ -486,6 +464,148 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => EntryDetailScreen(slug: slug),
+      ),
+    );
+  }
+
+  Widget _buildRecentlyViewedSection() {
+    final recentlyViewedAsync = ref.watch(recentlyViewedProvider);
+
+    return recentlyViewedAsync.when(
+      loading: () => const SliverFillRemaining(
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => _buildEmptySearchState(),
+      data: (recentlyViewed) {
+        if (recentlyViewed.isEmpty) {
+          return _buildEmptySearchState();
+        }
+
+        return SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              // Header
+              Row(
+                children: [
+                  Icon(
+                    Icons.history,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Recently Viewed',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () async {
+                      await ref.read(recentlyViewedProvider.notifier).clear();
+                    },
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Recently viewed list
+              ...recentlyViewed.map((item) => _RecentlyViewedTile(
+                    item: item,
+                    onTap: () => _openEntry(item.slug),
+                  )),
+              const SizedBox(height: 24),
+              // Search hint
+              Center(
+                child: Text(
+                  'Use the search bar above to find more ROMs',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[500],
+                      ),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptySearchState() {
+    return SliverFillRemaining(
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Search for ROMs',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Enter a game name or use filters to browse',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[500],
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentlyViewedTile extends StatelessWidget {
+  final RecentlyViewed item;
+  final VoidCallback onTap;
+
+  const _RecentlyViewedTile({
+    required this.item,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: item.boxartUrl != null
+              ? Image.network(
+                  item.boxartUrl!,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 48,
+                    height: 48,
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: const Icon(Icons.videogame_asset, size: 24),
+                  ),
+                )
+              : Container(
+                  width: 48,
+                  height: 48,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const Icon(Icons.videogame_asset, size: 24),
+                ),
+        ),
+        title: Text(
+          item.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          PlatformNames.getDisplayName(item.platform),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
       ),
     );
   }

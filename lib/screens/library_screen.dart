@@ -6,8 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
 
 import '../models/models.dart';
-import '../providers/library_provider.dart';
+import '../providers/providers.dart';
 import '../utils/utils.dart';
+import 'entry_detail_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -16,19 +17,29 @@ class LibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+class _LibraryScreenState extends ConsumerState<LibraryScreen>
+    with SingleTickerProviderStateMixin {
   final _searchController = TextEditingController();
   bool _showSearch = false;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final libraryState = ref.watch(libraryProvider);
+    final favoritesAsync = ref.watch(favoritesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -120,8 +131,48 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ],
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.folder, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Downloaded (${libraryState.items.length})'),
+                ],
+              ),
+            ),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.favorite, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Wishlist (${favoritesAsync.valueOrNull?.length ?? 0})',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // Downloaded tab
+          _buildDownloadedTab(libraryState),
+          // Wishlist tab
+          _buildWishlistTab(favoritesAsync),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDownloadedTab(LibraryState libraryState) {
+    return Column(
         children: [
           // Platform filter chips
           if (libraryState.platforms.isNotEmpty)
@@ -191,7 +242,73 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
           ),
         ],
+    );
+  }
+
+  Widget _buildWishlistTab(AsyncValue<List<Favorite>> favoritesAsync) {
+    return favoritesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load wishlist',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ],
+        ),
       ),
+      data: (favorites) {
+        if (favorites.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.favorite_border, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Your wishlist is empty',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tap the heart icon on any ROM to add it here',
+                  style: TextStyle(color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: favorites.length,
+          itemBuilder: (context, index) {
+            final item = favorites[index];
+            return _WishlistItemTile(
+              item: item,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EntryDetailScreen(slug: item.slug),
+                  ),
+                );
+              },
+              onRemove: () async {
+                await ref.read(favoritesProvider.notifier).removeFavorite(item.slug);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Removed from wishlist')),
+                  );
+                }
+              },
+            );
+          },
+        );
+      },
     );
   }
 
@@ -484,6 +601,76 @@ class _LibraryItemTile extends StatelessWidget {
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         onPressed: onDelete,
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _WishlistItemTile extends StatelessWidget {
+  final Favorite item;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _WishlistItemTile({
+    required this.item,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return ListTile(
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: SizedBox(
+          width: 56,
+          height: 56,
+          child: item.boxartUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: item.boxartUrl!,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.gamepad, color: Colors.grey),
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.gamepad, color: Colors.grey),
+                  ),
+                )
+              : Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.gamepad, color: Colors.grey),
+                ),
+        ),
+      ),
+      title: Text(
+        item.title,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          PlatformNames.getDisplayName(item.platform),
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.favorite, color: Colors.red),
+        onPressed: onRemove,
+        tooltip: 'Remove from wishlist',
       ),
       onTap: onTap,
     );
