@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:uuid/uuid.dart';
@@ -433,16 +433,27 @@ class DownloadService {
         _downloadController.add(updatedTask);
         await _updateNotifications();
 
-        final extractedPath = await _extractZip(downloadPath, task.platform);
-
-        await File(downloadPath).delete();
-
-        updatedTask = updatedTask.copyWith(
-          status: DownloadStatus.completed,
-          progress: 1.0,
-          filePath: extractedPath,
-          completedAt: DateTime.now(),
-        );
+        try {
+          final extractedPath = await _extractZip(downloadPath, task.platform);
+          // Only delete archive after successful extraction
+          await File(downloadPath).delete();
+          updatedTask = updatedTask.copyWith(
+            status: DownloadStatus.completed,
+            progress: 1.0,
+            filePath: extractedPath,
+            completedAt: DateTime.now(),
+          );
+        } catch (e) {
+          // Extraction failed - keep the downloaded file as-is
+          // This handles cases where the file isn't a valid archive
+          // (e.g., wrong extension, corrupted, or unsupported format like .7z)
+          updatedTask = updatedTask.copyWith(
+            status: DownloadStatus.completed,
+            progress: 1.0,
+            filePath: downloadPath,
+            completedAt: DateTime.now(),
+          );
+        }
       } else {
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.completed,
@@ -695,28 +706,22 @@ class DownloadService {
 
   bool _shouldExtract(String filename) {
     final lower = filename.toLowerCase();
-    return lower.endsWith('.zip') || lower.endsWith('.7z');
+    // Only extract ZIP files - 7z is not supported by the archive package
+    return lower.endsWith('.zip');
   }
 
   Future<String> _extractZip(String zipPath, String platform) async {
-    final bytes = await File(zipPath).readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-
     final platformDir = await _storage.getPlatformDirectory(platform);
-    String? firstFilePath;
 
-    for (final file in archive) {
-      final filename = file.name;
-      if (file.isFile) {
-        final outputPath = '${platformDir.path}/$filename';
-        final outFile = File(outputPath);
-        await outFile.create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-        firstFilePath ??= outputPath;
-      } else {
-        await Directory(
-          '${platformDir.path}/$filename',
-        ).create(recursive: true);
+    // Use extractFileToDisk for memory-efficient streaming extraction
+    extractFileToDisk(zipPath, platformDir.path);
+
+    // Find the first extracted file to return as the result path
+    String? firstFilePath;
+    await for (final entity in platformDir.list(recursive: true)) {
+      if (entity is File) {
+        firstFilePath = entity.path;
+        break;
       }
     }
 
