@@ -42,7 +42,9 @@ class UpdateState {
   }) {
     return UpdateState(
       status: status ?? this.status,
-      availableUpdate: clearUpdate ? null : (availableUpdate ?? this.availableUpdate),
+      availableUpdate: clearUpdate
+          ? null
+          : (availableUpdate ?? this.availableUpdate),
       downloadProgress: downloadProgress ?? this.downloadProgress,
       downloadedApkPath: downloadedApkPath ?? this.downloadedApkPath,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
@@ -69,7 +71,7 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
       } else {
         state = state.copyWith(status: UpdateStatus.idle, clearUpdate: true);
       }
-    } catch (e) {
+    } catch (error) {
       state = state.copyWith(
         status: UpdateStatus.error,
         errorMessage: 'Failed to check for updates',
@@ -82,7 +84,10 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
     if (update == null || update.apkDownloadUrl == null) return;
 
     _downloadCancelToken = CancelToken();
-    state = state.copyWith(status: UpdateStatus.downloading, downloadProgress: 0);
+    state = state.copyWith(
+      status: UpdateStatus.downloading,
+      downloadProgress: 0,
+    );
 
     try {
       final apkPath = await _service.downloadUpdate(
@@ -107,16 +112,16 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
           errorMessage: 'Download failed',
         );
       }
-    } on DioException catch (e) {
-      if (e.type == DioExceptionType.cancel) {
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.cancel) {
         state = state.copyWith(status: UpdateStatus.available);
       } else {
         state = state.copyWith(
           status: UpdateStatus.error,
-          errorMessage: 'Download failed: ${e.message}',
+          errorMessage: 'Download failed: ${error.message}',
         );
       }
-    } catch (e) {
+    } catch (error) {
       state = state.copyWith(
         status: UpdateStatus.error,
         errorMessage: 'Download failed',
@@ -142,13 +147,16 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
   }
 }
 
-final updateProvider = StateNotifierProvider<UpdateNotifier, UpdateState>((ref) {
+final updateProvider = StateNotifierProvider<UpdateNotifier, UpdateState>((
+  ref,
+) {
   final service = ref.watch(updateServiceProvider);
+
   return UpdateNotifier(service);
 });
 
-/// Provider for current app version
 final currentVersionProvider = FutureProvider<String>((ref) async {
   final service = ref.watch(updateServiceProvider);
+
   return service.getCurrentVersion();
 });

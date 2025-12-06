@@ -3,11 +3,7 @@ class Platform {
   final String brand;
   final String name;
 
-  const Platform({
-    required this.id,
-    required this.brand,
-    required this.name,
-  });
+  const Platform({required this.id, required this.brand, required this.name});
 
   factory Platform.fromJson(Map<String, dynamic> json) {
     return Platform(
@@ -18,11 +14,7 @@ class Platform {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'brand': brand,
-      'name': name,
-    };
+    return {'id': id, 'brand': brand, 'name': name};
   }
 
   @override

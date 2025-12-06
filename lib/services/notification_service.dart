@@ -55,7 +55,6 @@ class NotificationService with WidgetsBindingObserver {
       onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
-    // Create notification channels for Android
     if (io.Platform.isAndroid) {
       await _createNotificationChannels();
     }
@@ -99,7 +98,6 @@ class NotificationService with WidgetsBindingObserver {
     }
   }
 
-  /// Set a callback to handle notification taps
   void setOnTapCallback(NotificationTapCallback callback) {
     _onTapCallback = callback;
   }
@@ -116,6 +114,7 @@ class NotificationService with WidgetsBindingObserver {
             AndroidFlutterLocalNotificationsPlugin
           >();
       final granted = await androidPlugin?.requestNotificationsPermission();
+
       return granted ?? false;
     } else if (io.Platform.isIOS) {
       final iosPlugin = _notifications
@@ -127,8 +126,10 @@ class NotificationService with WidgetsBindingObserver {
         badge: true,
         sound: true,
       );
+
       return granted ?? false;
     }
+
     return false;
   }
 
@@ -193,10 +194,8 @@ class NotificationService with WidgetsBindingObserver {
     required String title,
     required String platform,
   }) async {
-    // Cancel progress notification first
     await cancelProgressNotification();
 
-    // Don't show completion notification if app is in foreground
     if (_isAppInForeground) return;
 
     final androidDetails = AndroidNotificationDetails(
@@ -228,7 +227,6 @@ class NotificationService with WidgetsBindingObserver {
   }) async {
     await cancelProgressNotification();
 
-    // Don't show failure notification if app is in foreground
     if (_isAppInForeground) return;
 
     final androidDetails = AndroidNotificationDetails(

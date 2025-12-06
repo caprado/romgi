@@ -129,6 +129,7 @@ class DownloadService {
     final extracting = await _db.getDownloadsByStatus(
       DownloadStatus.extracting,
     );
+
     for (final task in extracting) {
       final updated = task.copyWith(status: DownloadStatus.pending);
       await _db.updateDownload(updated);
@@ -144,12 +145,12 @@ class DownloadService {
     String? boxartUrl,
     required DownloadLink link,
   }) async {
-    final existing = await _db.findExistingDownload(link.url);
-    if (existing != null) {
-      return (AddDownloadResult.duplicate, existing);
+    final existingDownload = await _db.findExistingDownload(link.url);
+    if (existingDownload != null) {
+      return (AddDownloadResult.duplicate, existingDownload);
     }
 
-    final task = DownloadTask(
+    final downloadTask = DownloadTask(
       id: _uuid.v4(),
       slug: slug,
       title: title,
@@ -160,17 +161,17 @@ class DownloadService {
       createdAt: DateTime.now(),
     );
 
-    await _db.insertDownload(task);
-    _downloadController.add(task);
+    await _db.insertDownload(downloadTask);
+    _downloadController.add(downloadTask);
 
     _processQueue();
 
-    return (AddDownloadResult.added, task);
+    return (AddDownloadResult.added, downloadTask);
   }
 
   Future<void> _processQueue() async {
-    // Prevent overlapping queue processing
     if (_isProcessingQueue) return;
+
     _isProcessingQueue = true;
 
     try {
@@ -187,6 +188,7 @@ class DownloadService {
           await _notifications.cancelProgressNotification();
           await _stopForegroundTask();
         }
+
         return;
       }
 
@@ -219,6 +221,7 @@ class DownloadService {
 
   static bool isAuthRequiredError(String? error) {
     if (error == null) return false;
+
     return error == authRequiredError ||
         error.contains('401') ||
         error.contains('Authorization Required') ||
@@ -234,7 +237,7 @@ class DownloadService {
     // Note: task is already in _activeTasks from _processQueue
     _activeCancelTokens[task.id] = cancelToken;
 
-    // Check if this download requires Internet Archive login (check link.type, not name)
+    // Check if this download requires Internet Archive login
     final requiresLogin = InternetArchiveAuthService.requiresLogin(
       task.link.type,
     );
@@ -251,6 +254,7 @@ class DownloadService {
         await _db.updateDownload(failedTask);
         _downloadController.add(failedTask);
         _processQueue();
+
         return;
       }
     }
@@ -264,16 +268,16 @@ class DownloadService {
     await _updateNotifications();
 
     try {
-      // Get the download path
       final downloadPath = await _storage.getDownloadPath(
         task.platform,
         task.link.filename,
       );
 
-      // Check if file already exists (resume support)
       int downloadedBytes = 0;
-      final file = File(downloadPath);
       bool attemptResume = false;
+
+      // Check if file already exists
+      final file = File(downloadPath);
       if (await file.exists()) {
         downloadedBytes = await file.length();
         // Only attempt resume if we have meaningful progress
@@ -345,7 +349,7 @@ class DownloadService {
             await file.delete();
             downloadedBytes = 0;
           }
-        } catch (_) {
+        } catch (error) {
           // HEAD request failed - try download anyway, but don't attempt resume
           await file.delete();
           downloadedBytes = 0;
@@ -443,10 +447,9 @@ class DownloadService {
             filePath: extractedPath,
             completedAt: DateTime.now(),
           );
-        } catch (e) {
+        } catch (error) {
           // Extraction failed - keep the downloaded file as-is
           // This handles cases where the file isn't a valid archive
-          // (e.g., wrong extension, corrupted, or unsupported format like .7z)
           updatedTask = updatedTask.copyWith(
             status: DownloadStatus.completed,
             progress: 1.0,
@@ -466,15 +469,15 @@ class DownloadService {
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
       await _notifications.updateForTask(updatedTask);
-    } on DioException catch (e) {
-      if (e.type == DioExceptionType.cancel) {
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.cancel) {
         // Download was paused/cancelled
         if (_pausedTaskIds.contains(task.id)) {
           updatedTask = updatedTask.copyWith(status: DownloadStatus.paused);
           _pausedTaskIds.remove(task.id);
         }
       } else {
-        final statusCode = e.response?.statusCode;
+        final statusCode = error.response?.statusCode;
 
         // Handle 416 Range Not Satisfiable - delete partial file and mark for retry
         if (statusCode == 416) {
@@ -488,7 +491,7 @@ class DownloadService {
             if (await file.exists()) {
               await file.delete();
             }
-          } catch (_) {}
+          } catch (error) {}
 
           // Set back to pending so it will be retried automatically
           updatedTask = updatedTask.copyWith(
@@ -519,7 +522,7 @@ class DownloadService {
           status: DownloadStatus.failed,
           error: isAuthError
               ? authRequiredError
-              : (e.message ?? 'Download failed'),
+              : (error.message ?? 'Download failed'),
         );
         await _notifications.updateForTask(updatedTask);
       }
@@ -537,7 +540,7 @@ class DownloadService {
         if (await file.exists()) {
           await file.delete();
         }
-      } catch (_) {}
+      } catch (error) {}
 
       updatedTask = updatedTask.copyWith(
         status: DownloadStatus.pending,
@@ -555,10 +558,10 @@ class DownloadService {
       _lastDbUpdate.remove(task.id);
       _processQueue();
       return;
-    } catch (e) {
+    } catch (error) {
       updatedTask = updatedTask.copyWith(
         status: DownloadStatus.failed,
-        error: e.toString(),
+        error: error.toString(),
       );
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
@@ -598,7 +601,7 @@ class DownloadService {
     } else {
       // Multiple downloads - show count
       final avgProgress =
-          activeList.fold<double>(0, (sum, t) => sum + t.progress) /
+          activeList.fold<double>(0, (sum, total) => sum + total.progress) /
           activeList.length;
       await _notifications.showDownloadProgress(
         title: '${activeList.length} downloads',
@@ -687,7 +690,7 @@ class DownloadService {
         if (await file.exists()) {
           await file.delete();
         }
-      } catch (_) {
+      } catch (error) {
         // Ignore errors deleting partial file
       }
 
@@ -706,14 +709,14 @@ class DownloadService {
 
   bool _shouldExtract(String filename) {
     final lower = filename.toLowerCase();
-    // Only extract ZIP files - 7z is not supported by the archive package
+
+    // Only extract ZIP files - 7z is not supported by the archive package at this time
     return lower.endsWith('.zip');
   }
 
   Future<String> _extractZip(String zipPath, String platform) async {
     final platformDir = await _storage.getPlatformDirectory(platform);
 
-    // Use extractFileToDisk for memory-efficient streaming extraction
     extractFileToDisk(zipPath, platformDir.path);
 
     // Find the first extracted file to return as the result path
@@ -721,6 +724,7 @@ class DownloadService {
     await for (final entity in platformDir.list(recursive: true)) {
       if (entity is File) {
         firstFilePath = entity.path;
+
         break;
       }
     }

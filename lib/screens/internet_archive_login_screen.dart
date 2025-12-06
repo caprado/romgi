@@ -100,8 +100,8 @@ class _InternetArchiveLoginScreenState
           Navigator.of(context).pop(true); // Return success
         }
       }
-    } catch (e) {
-      debugPrint('Error extracting cookies: $e');
+    } catch (error) {
+      debugPrint('Error extracting cookies: $error');
     }
   }
 

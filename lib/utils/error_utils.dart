@@ -1,25 +1,25 @@
 import 'package:dio/dio.dart';
 
 class ErrorUtils {
-  /// Convert an error to a user-friendly message
   static String getUserFriendlyMessage(dynamic error) {
     if (error is DioException) {
       return _getDioErrorMessage(error);
     }
 
-    final errorStr = error.toString().toLowerCase();
+    final errorString = error.toString().toLowerCase();
 
     // Check for common error patterns
-    if (errorStr.contains('socketexception') ||
-        errorStr.contains('connection refused')) {
+    if (errorString.contains('socketexception') ||
+        errorString.contains('connection refused')) {
       return 'Unable to connect to the server. Please check your internet connection.';
     }
 
-    if (errorStr.contains('timeout') || errorStr.contains('timed out')) {
+    if (errorString.contains('timeout') || errorString.contains('timed out')) {
       return 'Connection timed out. The server may be slow or unavailable.';
     }
 
-    if (errorStr.contains('handshake') || errorStr.contains('certificate')) {
+    if (errorString.contains('handshake') ||
+        errorString.contains('certificate')) {
       return 'Secure connection failed. Please try again later.';
     }
 
@@ -51,9 +51,11 @@ class ErrorUtils {
             message.contains('network is unreachable')) {
           return 'Unable to connect. Please check your internet connection.';
         }
+
         if (message.contains('handshake')) {
           return 'Secure connection failed. Please try again later.';
         }
+
         return 'Connection failed. Please try again.';
     }
   }
@@ -84,25 +86,25 @@ class ErrorUtils {
         if (statusCode >= 500) {
           return 'Server error. Please try again later.';
         }
+
         return 'Request failed. Please try again.';
     }
   }
 
-  /// Get an appropriate icon for the error type
   static ErrorDisplay getErrorDisplay(dynamic error) {
-    final errorStr = error.toString().toLowerCase();
+    final errorString = error.toString().toLowerCase();
     final isTimeout =
-        errorStr.contains('timeout') ||
-        errorStr.contains('timed out') ||
+        errorString.contains('timeout') ||
+        errorString.contains('timed out') ||
         (error is DioException &&
             (error.type == DioExceptionType.connectionTimeout ||
                 error.type == DioExceptionType.receiveTimeout ||
                 error.type == DioExceptionType.sendTimeout));
 
     final isConnectionError =
-        errorStr.contains('socketexception') ||
-        errorStr.contains('connection') ||
-        errorStr.contains('network') ||
+        errorString.contains('socketexception') ||
+        errorString.contains('connection') ||
+        errorString.contains('network') ||
         (error is DioException &&
             error.type == DioExceptionType.connectionError);
 

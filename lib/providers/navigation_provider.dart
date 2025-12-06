@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Navigation tab indices
 class NavTab {
   static const int browse = 0;
   static const int downloads = 1;
@@ -8,5 +7,4 @@ class NavTab {
   static const int settings = 3;
 }
 
-/// Provider to control the current navigation tab
 final navigationTabProvider = StateProvider<int>((ref) => NavTab.browse);

@@ -4,12 +4,12 @@ import '../models/models.dart';
 import '../services/database_service.dart';
 import 'download_provider.dart';
 
-/// Provider for all favorites
 final favoritesProvider =
     StateNotifierProvider<FavoritesNotifier, AsyncValue<List<Favorite>>>((ref) {
-  final db = ref.watch(databaseServiceProvider);
-  return FavoritesNotifier(db);
-});
+      final db = ref.watch(databaseServiceProvider);
+
+      return FavoritesNotifier(db);
+    });
 
 class FavoritesNotifier extends StateNotifier<AsyncValue<List<Favorite>>> {
   final DatabaseService _db;
@@ -22,9 +22,10 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<List<Favorite>>> {
     state = const AsyncValue.loading();
     try {
       final items = await _db.getFavorites();
+
       state = AsyncValue.data(items);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (error, string) {
+      state = AsyncValue.error(error, string);
     }
   }
 
@@ -68,14 +69,17 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<List<Favorite>>> {
   }
 }
 
-/// Provider to check if a specific slug is favorited
-final isFavoriteProvider = FutureProvider.family<bool, String>((ref, slug) async {
+final isFavoriteProvider = FutureProvider.family<bool, String>((
+  ref,
+  slug,
+) async {
   final db = ref.watch(databaseServiceProvider);
+
   return db.isFavorite(slug);
 });
 
-/// Provider for favorite count
 final favoriteCountProvider = FutureProvider<int>((ref) async {
   final db = ref.watch(databaseServiceProvider);
+
   return db.getFavoriteCount();
 });

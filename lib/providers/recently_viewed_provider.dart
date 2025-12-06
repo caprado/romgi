@@ -4,14 +4,17 @@ import '../models/models.dart';
 import '../services/database_service.dart';
 import 'download_provider.dart';
 
-/// Provider for recently viewed entries
 final recentlyViewedProvider =
-    StateNotifierProvider<RecentlyViewedNotifier, AsyncValue<List<RecentlyViewed>>>((ref) {
-  final db = ref.watch(databaseServiceProvider);
-  return RecentlyViewedNotifier(db);
-});
+    StateNotifierProvider<
+      RecentlyViewedNotifier,
+      AsyncValue<List<RecentlyViewed>>
+    >((ref) {
+      final db = ref.watch(databaseServiceProvider);
+      return RecentlyViewedNotifier(db);
+    });
 
-class RecentlyViewedNotifier extends StateNotifier<AsyncValue<List<RecentlyViewed>>> {
+class RecentlyViewedNotifier
+    extends StateNotifier<AsyncValue<List<RecentlyViewed>>> {
   final DatabaseService _db;
 
   RecentlyViewedNotifier(this._db) : super(const AsyncValue.loading()) {
@@ -23,8 +26,8 @@ class RecentlyViewedNotifier extends StateNotifier<AsyncValue<List<RecentlyViewe
     try {
       final items = await _db.getRecentlyViewed(limit: 20);
       state = AsyncValue.data(items);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (error, string) {
+      state = AsyncValue.error(error, string);
     }
   }
 

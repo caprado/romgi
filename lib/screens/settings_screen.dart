@@ -70,10 +70,8 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
-                // Download Locations Section
                 _SectionHeader(title: 'Download Locations'),
 
-                // Default download location
                 FutureBuilder<String>(
                   future: storage.getDownloadDirectory().then((d) => d.path),
                   builder: (context, snapshot) {
@@ -106,7 +104,6 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(),
 
-                // Per-platform locations
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Text(
@@ -131,7 +128,7 @@ class SettingsScreen extends ConsumerWidget {
                     padding: EdgeInsets.all(16),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                  error: (error, _) => Padding(
+                  error: (error, stackTrace) => Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
                       'Failed to load platforms',
@@ -185,7 +182,6 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
-                // Appearance Section
                 _SectionHeader(title: 'Appearance'),
 
                 ListTile(
@@ -199,7 +195,6 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
-                // Library Section
                 _SectionHeader(title: 'Library'),
 
                 ListTile(
@@ -255,14 +250,12 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
-                // Accounts Section
                 _SectionHeader(title: 'Accounts'),
 
                 _InternetArchiveAccountTile(),
 
                 const Divider(height: 32),
 
-                // About Section
                 _SectionHeader(title: 'About'),
 
                 const _VersionTile(),
@@ -391,7 +384,7 @@ class _VersionTile extends ConsumerWidget {
       title: const Text('Version'),
       subtitle: versionAsync.when(
         loading: () => const Text('Loading...'),
-        error: (_, __) => const Text('Unknown'),
+        error: (error, stackTrace) => const Text('Unknown'),
         data: (version) => Text(version),
       ),
     );
@@ -415,7 +408,8 @@ class _UpdateTile extends ConsumerWidget {
           title: Text(_getUpdateTitle(updateState.status)),
           subtitle: Text(_getUpdateSubtitle(updateState)),
           trailing: _buildTrailingWidget(context, ref, updateState),
-          onTap: updateState.status == UpdateStatus.idle ||
+          onTap:
+              updateState.status == UpdateStatus.idle ||
                   updateState.status == UpdateStatus.error
               ? () => ref.read(updateProvider.notifier).checkForUpdate()
               : null,
@@ -423,9 +417,7 @@ class _UpdateTile extends ConsumerWidget {
         if (updateState.status == UpdateStatus.downloading)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(
-              value: updateState.downloadProgress,
-            ),
+            child: LinearProgressIndicator(value: updateState.downloadProgress),
           ),
       ],
     );
@@ -545,7 +537,7 @@ class _InternetArchiveAccountTile extends ConsumerWidget {
         title: Text('Internet Archive'),
         subtitle: Text('Checking...'),
       ),
-      error: (_, __) => ListTile(
+      error: (error, stackTrace) => ListTile(
         leading: const Icon(Icons.account_circle),
         title: const Text('Internet Archive'),
         subtitle: const Text('Not logged in'),

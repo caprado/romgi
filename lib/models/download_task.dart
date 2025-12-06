@@ -20,7 +20,7 @@ class DownloadTask {
   final double progress;
   final int downloadedBytes;
   final int totalBytes;
-  final int bytesPerSecond; // Download speed in bytes/second
+  final int bytesPerSecond;
   final String? filePath;
   final String? error;
   final DateTime createdAt;
@@ -158,8 +158,10 @@ class DownloadTask {
     if (totalBytes > 0) {
       final downloadedMB = downloadedBytes / (1024 * 1024);
       final totalMB = totalBytes / (1024 * 1024);
+
       return '${downloadedMB.toStringAsFixed(1)} / ${totalMB.toStringAsFixed(1)} MB';
     }
+
     return link.sizeStr;
   }
 
@@ -169,9 +171,11 @@ class DownloadTask {
       return '$bytesPerSecond B/s';
     } else if (bytesPerSecond < 1024 * 1024) {
       final kbps = bytesPerSecond / 1024;
+
       return '${kbps.toStringAsFixed(1)} KB/s';
     } else {
       final mbps = bytesPerSecond / (1024 * 1024);
+
       return '${mbps.toStringAsFixed(1)} MB/s';
     }
   }

@@ -40,7 +40,6 @@ class LibraryState {
     );
   }
 
-  /// Get filtered items based on platform and search
   List<DownloadTask> get filteredItems {
     var result = items;
 
@@ -64,15 +63,14 @@ class LibraryState {
     return result;
   }
 
-  /// Get unique platforms from items
   List<String> get platforms {
     final platformSet = items.map((item) => item.platform).toSet();
     return platformSet.toList()..sort();
   }
 
-  /// Check if a file exists
   bool fileExists(String? path) {
     if (path == null) return false;
+
     return verifiedFiles.contains(path);
   }
 }
@@ -118,7 +116,6 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   Future<void> deleteItem(DownloadTask task, {bool deleteFile = true}) async {
-    // Delete from database
     await _db.deleteDownload(task.id);
 
     // Delete file if requested
@@ -126,7 +123,6 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       await _storage.deleteFile(task.filePath!);
     }
 
-    // Refresh the list
     await refresh();
   }
 
@@ -167,6 +163,7 @@ final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>((
 ) {
   final db = ref.watch(databaseServiceProvider);
   final storage = ref.watch(storageServiceProvider);
+
   return LibraryNotifier(db, storage);
 });
 
@@ -180,5 +177,6 @@ final downloadedSlugsProvider = FutureProvider<Set<String>>((ref) async {
   }
   final db = ref.watch(databaseServiceProvider);
   final completed = await db.getCompletedDownloads();
+
   return completed.map((task) => task.slug).toSet();
 });

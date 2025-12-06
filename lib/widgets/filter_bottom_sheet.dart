@@ -19,6 +19,7 @@ class _FilterBottomSheetState extends ConsumerState<FilterBottomSheet> {
   void initState() {
     super.initState();
     final searchState = ref.read(searchProvider);
+
     _selectedPlatforms = searchState.selectedPlatforms.toSet();
     _selectedRegions = searchState.selectedRegions.toSet();
   }
@@ -94,7 +95,8 @@ class _FilterBottomSheetState extends ConsumerState<FilterBottomSheet> {
                     regionsAsync.when(
                       loading: () =>
                           const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Text('Error loading regions: $e'),
+                      error: (error, stackTrace) =>
+                          Text('Error loading regions: $error'),
                       data: (regions) => Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -130,7 +132,8 @@ class _FilterBottomSheetState extends ConsumerState<FilterBottomSheet> {
                     platformsAsync.when(
                       loading: () =>
                           const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Text('Error loading platforms: $e'),
+                      error: (error, stackTrace) =>
+                          Text('Error loading platforms: $error'),
                       data: (platforms) => _buildPlatformsList(platforms),
                     ),
                   ],
@@ -164,13 +167,11 @@ class _FilterBottomSheetState extends ConsumerState<FilterBottomSheet> {
   }
 
   Widget _buildPlatformsList(List<Platform> platforms) {
-    // Group platforms by brand
     final grouped = <String, List<Platform>>{};
     for (final platform in platforms) {
       grouped.putIfAbsent(platform.brand, () => []).add(platform);
     }
 
-    // Sort brands alphabetically
     final sortedBrands = grouped.keys.toList()..sort();
 
     return Column(

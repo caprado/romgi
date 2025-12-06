@@ -34,22 +34,23 @@ class SettingsState {
     bool? isLoading,
   }) {
     return SettingsState(
-      defaultDownloadPath: clearDefaultPath ? null : (defaultDownloadPath ?? this.defaultDownloadPath),
+      defaultDownloadPath: clearDefaultPath
+          ? null
+          : (defaultDownloadPath ?? this.defaultDownloadPath),
       platformPaths: platformPaths ?? this.platformPaths,
       themeMode: themeMode ?? this.themeMode,
       defaultPlatforms: defaultPlatforms ?? this.defaultPlatforms,
       defaultRegions: defaultRegions ?? this.defaultRegions,
-      maxConcurrentDownloads: maxConcurrentDownloads ?? this.maxConcurrentDownloads,
+      maxConcurrentDownloads:
+          maxConcurrentDownloads ?? this.maxConcurrentDownloads,
       isLoading: isLoading ?? this.isLoading,
     );
   }
 
-  /// Get the download path for a platform (custom or default)
   String? getPathForPlatform(String platform) {
     return platformPaths[platform] ?? defaultDownloadPath;
   }
 
-  /// Convert to Flutter ThemeMode
   ThemeMode get flutterThemeMode {
     switch (themeMode) {
       case AppThemeMode.light:
@@ -83,18 +84,23 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
     // Load theme mode
     final themeModeIndex = prefs.getInt(_keyThemeMode) ?? 0;
-    final themeMode = AppThemeMode.values[themeModeIndex.clamp(0, AppThemeMode.values.length - 1)];
+    final themeMode = AppThemeMode
+        .values[themeModeIndex.clamp(0, AppThemeMode.values.length - 1)];
 
     // Load default filters
     final defaultPlatforms = prefs.getStringList(_keyDefaultPlatforms) ?? [];
     final defaultRegions = prefs.getStringList(_keyDefaultRegions) ?? [];
 
     // Load concurrent downloads setting
-    final maxConcurrentDownloads = prefs.getInt(_keyMaxConcurrentDownloads) ?? 3;
+    final maxConcurrentDownloads =
+        prefs.getInt(_keyMaxConcurrentDownloads) ?? 3;
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
-    final keys = prefs.getKeys().where((k) => k.startsWith(_keyPlatformPaths));
+    final keys = prefs.getKeys().where(
+      (key) => key.startsWith(_keyPlatformPaths),
+    );
+
     for (final key in keys) {
       final platform = key.replaceFirst(_keyPlatformPaths, '');
       final path = prefs.getString(key);
@@ -176,7 +182,10 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDefaultRegions);
     await prefs.remove(_keyMaxConcurrentDownloads);
 
-    final keys = prefs.getKeys().where((k) => k.startsWith(_keyPlatformPaths));
+    final keys = prefs.getKeys().where(
+      (key) => key.startsWith(_keyPlatformPaths),
+    );
+
     for (final key in keys) {
       await prefs.remove(key);
     }
@@ -185,6 +194,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   }
 }
 
-final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
-  return SettingsNotifier();
-});
+final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
+  (ref) {
+    return SettingsNotifier();
+  },
+);

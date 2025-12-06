@@ -106,14 +106,11 @@ class PlatformNames {
     'fbneo': 'MAME',
   };
 
-  /// Get the display name for a platform ID
-  /// Returns the mapped name if found, otherwise returns the ID in uppercase
   static String getDisplayName(String platformId) {
     final lowerId = platformId.toLowerCase();
     return _names[lowerId] ?? platformId.toUpperCase();
   }
 
-  /// Check if we have a custom name for this platform
   static bool hasCustomName(String platformId) {
     return _names.containsKey(platformId.toLowerCase());
   }

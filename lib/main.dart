@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'screens/screens.dart';
+
 import 'providers/providers.dart';
+import 'screens/screens.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,9 +37,7 @@ class RomgiApp extends ConsumerWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          scrolledUnderElevation: 0,
-        ),
+        appBarTheme: const AppBarTheme(scrolledUnderElevation: 0),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -46,9 +45,7 @@ class RomgiApp extends ConsumerWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          scrolledUnderElevation: 0,
-        ),
+        appBarTheme: const AppBarTheme(scrolledUnderElevation: 0),
       ),
       themeMode: settings.flutterThemeMode,
       home: const WithForegroundTask(child: MainNavigation()),
@@ -74,8 +71,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Request storage permission on Android
+    WidgetsBinding.instance.addPostFrameCallback((debugLabel) {
       _requestStoragePermission();
 
       // Trigger library file verification on startup
@@ -85,7 +81,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       final notifications = ref.read(notificationServiceProvider);
       notifications.setOnTapCallback(_onNotificationTap);
 
-      // Check for app updates in the background
       _checkForUpdates();
     });
   }
@@ -93,6 +88,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   Future<void> _checkForUpdates() async {
     // Delay slightly to not interfere with app startup
     await Future.delayed(const Duration(seconds: 2));
+
     if (!mounted) return;
 
     await ref.read(updateProvider.notifier).checkForUpdate();
@@ -179,10 +175,11 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     final currentIndex = ref.watch(navigationTabProvider);
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final isWideScreen = MediaQuery.of(context).size.width > 600;
 
-    // Use NavigationRail for landscape/wide screens (better for handhelds)
+    // Use NavigationRail for landscape/wide screens
     if (isLandscape || isWideScreen) {
       return Scaffold(
         body: Row(
@@ -216,10 +213,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
             ),
             const VerticalDivider(thickness: 1, width: 1),
             Expanded(
-              child: IndexedStack(
-                index: currentIndex,
-                children: _screens,
-              ),
+              child: IndexedStack(index: currentIndex, children: _screens),
             ),
           ],
         ),
@@ -228,10 +222,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
     // Use bottom NavigationBar for portrait mode
     return Scaffold(
-      body: IndexedStack(
-        index: currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: _onTabSelected,

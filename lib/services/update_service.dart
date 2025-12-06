@@ -21,7 +21,6 @@ class AppRelease {
   });
 
   factory AppRelease.fromGitHubJson(Map<String, dynamic> json) {
-    // Find the APK asset
     String? apkUrl;
     int? apkSize;
     final assets = json['assets'] as List<dynamic>? ?? [];
@@ -30,6 +29,7 @@ class AppRelease {
       if (name.endsWith('.apk')) {
         apkUrl = asset['browser_download_url'] as String?;
         apkSize = asset['size'] as int?;
+
         break;
       }
     }
@@ -44,7 +44,8 @@ class AppRelease {
       body: json['body'] as String?,
       apkDownloadUrl: apkUrl,
       apkSize: apkSize,
-      publishedAt: DateTime.tryParse(json['published_at'] as String? ?? '') ??
+      publishedAt:
+          DateTime.tryParse(json['published_at'] as String? ?? '') ??
           DateTime.now(),
     );
   }
@@ -59,13 +60,12 @@ class UpdateService {
 
   UpdateService({Dio? dio}) : _dio = dio ?? Dio();
 
-  /// Get the current app version
   Future<String> getCurrentVersion() async {
     final packageInfo = await PackageInfo.fromPlatform();
+
     return packageInfo.version;
   }
 
-  /// Fetch the latest release from GitHub
   Future<AppRelease?> getLatestRelease() async {
     try {
       final response = await _dio.get(
@@ -81,13 +81,13 @@ class UpdateService {
       if (response.statusCode == 200 && response.data != null) {
         return AppRelease.fromGitHubJson(response.data as Map<String, dynamic>);
       }
+
       return null;
-    } catch (e) {
+    } catch (error) {
       return null;
     }
   }
 
-  /// Check if an update is available
   Future<AppRelease?> checkForUpdate() async {
     final currentVersion = await getCurrentVersion();
     final latestRelease = await getLatestRelease();
@@ -97,18 +97,26 @@ class UpdateService {
     if (_isNewerVersion(latestRelease.version, currentVersion)) {
       return latestRelease;
     }
+
     return null;
   }
 
   /// Compare version strings (e.g., "1.0.1" > "1.0.0")
   bool _isNewerVersion(String newVersion, String currentVersion) {
-    final newParts = newVersion.split('.').map((p) => int.tryParse(p) ?? 0).toList();
-    final currentParts = currentVersion.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+    final newParts = newVersion
+        .split('.')
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
+    final currentParts = currentVersion
+        .split('.')
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
 
     // Pad shorter list with zeros
     while (newParts.length < currentParts.length) {
       newParts.add(0);
     }
+
     while (currentParts.length < newParts.length) {
       currentParts.add(0);
     }
@@ -117,10 +125,10 @@ class UpdateService {
       if (newParts[i] > currentParts[i]) return true;
       if (newParts[i] < currentParts[i]) return false;
     }
+
     return false;
   }
 
-  /// Download the APK update
   Future<String?> downloadUpdate(
     AppRelease release, {
     void Function(int received, int total)? onProgress,
@@ -129,33 +137,29 @@ class UpdateService {
     if (release.apkDownloadUrl == null) return null;
 
     try {
-      final tempDir = await getTemporaryDirectory();
-      final apkPath = '${tempDir.path}/romgi-${release.version}.apk';
+      final tempDirectory = await getTemporaryDirectory();
+      final apkPath = '${tempDirectory.path}/romgi-${release.version}.apk';
 
       await _dio.download(
         release.apkDownloadUrl!,
         apkPath,
         onReceiveProgress: onProgress,
         cancelToken: cancelToken,
-        options: Options(
-          headers: {
-            'User-Agent': 'romgi-app',
-          },
-        ),
+        options: Options(headers: {'User-Agent': 'romgi-app'}),
       );
 
       return apkPath;
-    } catch (e) {
+    } catch (error) {
       return null;
     }
   }
 
-  /// Install the downloaded APK
   Future<bool> installApk(String apkPath) async {
     try {
       final result = await OpenFilex.open(apkPath);
+
       return result.type == ResultType.done;
-    } catch (e) {
+    } catch (error) {
       return false;
     }
   }

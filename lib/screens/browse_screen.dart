@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../utils/utils.dart';
 import '../widgets/widgets.dart';
 import 'entry_detail_screen.dart';
 
-// Provider for view mode preference
 final isGridViewProvider = StateProvider<bool>((ref) => false);
 
 class BrowseScreen extends ConsumerStatefulWidget {
@@ -72,9 +72,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
-        final message = ErrorUtils.getUserFriendlyMessage(e);
+        final message = ErrorUtils.getUserFriendlyMessage(error);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
@@ -97,7 +97,11 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     );
   }
 
-  Widget _buildLandscapeAppBar(SearchState searchState, bool isGridView, int activeFilterCount) {
+  Widget _buildLandscapeAppBar(
+    SearchState searchState,
+    bool isGridView,
+    int activeFilterCount,
+  ) {
     return SliverAppBar(
       floating: true,
       snap: true,
@@ -133,8 +137,8 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                     vertical: 12,
                   ),
                 ),
-                onSubmitted: (_) => _onSearch(),
-                onChanged: (_) => setState(() {}),
+                onSubmitted: (string) => _onSearch(),
+                onChanged: (string) => setState(() {}),
                 textInputAction: TextInputAction.search,
               ),
             ),
@@ -166,7 +170,11 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     );
   }
 
-  Widget _buildPortraitAppBar(SearchState searchState, bool isGridView, int activeFilterCount) {
+  Widget _buildPortraitAppBar(
+    SearchState searchState,
+    bool isGridView,
+    int activeFilterCount,
+  ) {
     return SliverAppBar(
       floating: true,
       snap: true,
@@ -202,8 +210,8 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                     vertical: 14,
                   ),
                 ),
-                onSubmitted: (_) => _onSearch(),
-                onChanged: (_) => setState(() {}),
+                onSubmitted: (string) => _onSearch(),
+                onChanged: (string) => setState(() {}),
                 textInputAction: TextInputAction.search,
               ),
               const SizedBox(height: 12),
@@ -250,9 +258,11 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
     final isGridView = ref.watch(isGridViewProvider);
-    final activeFilterCount = searchState.selectedPlatforms.length +
+    final activeFilterCount =
+        searchState.selectedPlatforms.length +
         searchState.selectedRegions.length;
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -280,46 +290,52 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     children: [
-                      ...searchState.selectedPlatforms.map((p) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Chip(
-                              label: Text(PlatformNames.getDisplayName(p)),
-                              onDeleted: () {
-                                final updated = searchState.selectedPlatforms
-                                    .where((id) => id != p)
-                                    .toList();
-                                ref.read(searchProvider.notifier)
-                                  ..setSelectedPlatforms(updated)
-                                  ..search();
-                              },
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          )),
-                      ...searchState.selectedRegions.map((r) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Chip(
-                              label: Text(RegionUtils.getFlagWithCode(r)),
-                              onDeleted: () {
-                                final updated = searchState.selectedRegions
-                                    .where((id) => id != r)
-                                    .toList();
-                                ref.read(searchProvider.notifier)
-                                  ..setSelectedRegions(updated)
-                                  ..search();
-                              },
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          )),
+                      ...searchState.selectedPlatforms.map(
+                        (platform) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Chip(
+                            label: Text(PlatformNames.getDisplayName(platform)),
+                            onDeleted: () {
+                              final updated = searchState.selectedPlatforms
+                                  .where((id) => id != platform)
+                                  .toList();
+                              ref.read(searchProvider.notifier)
+                                ..setSelectedPlatforms(updated)
+                                ..search();
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                      ...searchState.selectedRegions.map(
+                        (region) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Chip(
+                            label: Text(RegionUtils.getFlagWithCode(region)),
+                            onDeleted: () {
+                              final updated = searchState.selectedRegions
+                                  .where((id) => id != region)
+                                  .toList();
+                              ref.read(searchProvider.notifier)
+                                ..setSelectedRegions(updated)
+                                ..search();
+                            },
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
 
-            // Results count
             if (searchState.result != null)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 8,
+                  ),
                   child: Text(
                     '${searchState.result!.totalResults} results',
                     style: Theme.of(context).textTheme.bodySmall,
@@ -327,7 +343,6 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                 ),
               ),
 
-            // Results
             _buildSliverResults(searchState, isGridView),
           ],
         ),
@@ -343,10 +358,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     }
 
     if (searchState.error != null) {
-      return SliverErrorView(
-        error: searchState.error,
-        onRetry: _onSearch,
-      );
+      return SliverErrorView(error: searchState.error, onRetry: _onSearch);
     }
 
     // Show initial state before any search is performed
@@ -393,31 +405,28 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     final downloadedSet = downloadedSlugs.valueOrNull ?? <String>{};
 
     return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          if (index >= entries.length) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: CircularProgressIndicator(),
-              ),
-            );
-          }
-
-          final entry = entries[index];
-          return Column(
-            children: [
-              RomListTile(
-                entry: entry,
-                isDownloaded: downloadedSet.contains(entry.slug),
-                onTap: () => _openEntry(entry.slug),
-              ),
-              if (index < entries.length - 1) const Divider(height: 1),
-            ],
+      delegate: SliverChildBuilderDelegate((context, index) {
+        if (index >= entries.length) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: CircularProgressIndicator(),
+            ),
           );
-        },
-        childCount: entries.length + (searchState.result!.hasMore ? 1 : 0),
-      ),
+        }
+
+        final entry = entries[index];
+        return Column(
+          children: [
+            RomListTile(
+              entry: entry,
+              isDownloaded: downloadedSet.contains(entry.slug),
+              onTap: () => _openEntry(entry.slug),
+            ),
+            if (index < entries.length - 1) const Divider(height: 1),
+          ],
+        );
+      }, childCount: entries.length + (searchState.result!.hasMore ? 1 : 0)),
     );
   }
 
@@ -440,21 +449,18 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            if (index >= entries.length) {
-              return const Center(child: CircularProgressIndicator());
-            }
+        delegate: SliverChildBuilderDelegate((context, index) {
+          if (index >= entries.length) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            final entry = entries[index];
-            return RomGridCard(
-              entry: entry,
-              isDownloaded: downloadedSet.contains(entry.slug),
-              onTap: () => _openEntry(entry.slug),
-            );
-          },
-          childCount: entries.length + (searchState.result!.hasMore ? 1 : 0),
-        ),
+          final entry = entries[index];
+          return RomGridCard(
+            entry: entry,
+            isDownloaded: downloadedSet.contains(entry.slug),
+            onTap: () => _openEntry(entry.slug),
+          );
+        }, childCount: entries.length + (searchState.result!.hasMore ? 1 : 0)),
       ),
     );
   }
@@ -462,9 +468,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   void _openEntry(String slug) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => EntryDetailScreen(slug: slug),
-      ),
+      MaterialPageRoute(builder: (context) => EntryDetailScreen(slug: slug)),
     );
   }
 
@@ -475,7 +479,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       loading: () => const SliverFillRemaining(
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (_, __) => _buildEmptySearchState(),
+      error: (error, stackTrace) => _buildEmptySearchState(),
       data: (recentlyViewed) {
         if (recentlyViewed.isEmpty) {
           return _buildEmptySearchState();
@@ -496,8 +500,8 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                   Text(
                     'Recently Viewed',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const Spacer(),
                   TextButton(
@@ -510,18 +514,20 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
               ),
               const SizedBox(height: 8),
               // Recently viewed list
-              ...recentlyViewed.map((item) => _RecentlyViewedTile(
-                    item: item,
-                    onTap: () => _openEntry(item.slug),
-                  )),
+              ...recentlyViewed.map(
+                (item) => _RecentlyViewedTile(
+                  item: item,
+                  onTap: () => _openEntry(item.slug),
+                ),
+              ),
               const SizedBox(height: 24),
               // Search hint
               Center(
                 child: Text(
                   'Use the search bar above to find more ROMs',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[500],
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
                 ),
               ),
             ]),
@@ -541,16 +547,16 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
             const SizedBox(height: 16),
             Text(
               'Search for ROMs',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.grey[600],
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             Text(
               'Enter a game name or use filters to browse',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[500],
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey[500]),
             ),
           ],
         ),
@@ -563,10 +569,7 @@ class _RecentlyViewedTile extends StatelessWidget {
   final RecentlyViewed item;
   final VoidCallback onTap;
 
-  const _RecentlyViewedTile({
-    required this.item,
-    required this.onTap,
-  });
+  const _RecentlyViewedTile({required this.item, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -581,10 +584,12 @@ class _RecentlyViewedTile extends StatelessWidget {
                   width: 48,
                   height: 48,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (context, error, stackTrace) => Container(
                     width: 48,
                     height: 48,
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     child: const Icon(Icons.videogame_asset, size: 24),
                   ),
                 )
@@ -595,11 +600,7 @@ class _RecentlyViewedTile extends StatelessWidget {
                   child: const Icon(Icons.videogame_asset, size: 24),
                 ),
         ),
-        title: Text(
-          item.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           PlatformNames.getDisplayName(item.platform),
           style: Theme.of(context).textTheme.bodySmall,

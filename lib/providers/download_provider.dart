@@ -1,12 +1,13 @@
 import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/models.dart';
 import '../services/services.dart';
 import 'internet_archive_auth_provider.dart';
 import 'library_provider.dart';
 import 'settings_provider.dart';
 
-// Service providers
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
   return DatabaseService();
 });
@@ -32,7 +33,6 @@ final downloadServiceProvider = Provider<DownloadService>((ref) {
   );
 });
 
-// Download state
 class DownloadState {
   final List<DownloadTask> activeDownloads;
   final List<DownloadTask> completedDownloads;
@@ -66,28 +66,40 @@ class DownloadState {
 
   DownloadTask? get currentDownload {
     final downloading = activeDownloads.where(
-      (t) => t.status == DownloadStatus.downloading || t.status == DownloadStatus.extracting,
+      (download) =>
+          download.status == DownloadStatus.downloading ||
+          download.status == DownloadStatus.extracting,
     );
     return downloading.isNotEmpty ? downloading.first : null;
   }
 
-  /// Get all currently downloading/extracting tasks (for concurrent downloads)
   List<DownloadTask> get currentDownloads {
-    return activeDownloads.where(
-      (t) => t.status == DownloadStatus.downloading || t.status == DownloadStatus.extracting,
-    ).toList();
+    return activeDownloads
+        .where(
+          (download) =>
+              download.status == DownloadStatus.downloading ||
+              download.status == DownloadStatus.extracting,
+        )
+        .toList();
   }
 
   List<DownloadTask> get queuedDownloads {
-    final queued = activeDownloads.where(
-      (t) => t.status == DownloadStatus.pending || t.status == DownloadStatus.paused,
-    ).toList();
+    final queued = activeDownloads
+        .where(
+          (download) =>
+              download.status == DownloadStatus.pending ||
+              download.status == DownloadStatus.paused,
+        )
+        .toList();
+
     // Sort: pending first, then paused (paused items won't run until resumed)
-    queued.sort((a, b) {
-      if (a.status == b.status) return 0;
-      if (a.status == DownloadStatus.pending) return -1;
+    queued.sort((downloadA, downloadB) {
+      if (downloadA.status == downloadB.status) return 0;
+      if (downloadA.status == DownloadStatus.pending) return -1;
+
       return 1;
     });
+
     return queued;
   }
 }
@@ -96,7 +108,8 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
   final DownloadService _service;
   StreamSubscription<DownloadTask>? _subscription;
 
-  DownloadNotifier(this._service, {int maxConcurrentDownloads = 3}) : super(const DownloadState()) {
+  DownloadNotifier(this._service, {int maxConcurrentDownloads = 3})
+    : super(const DownloadState()) {
     _service.setMaxConcurrentDownloads(maxConcurrentDownloads);
     _init();
   }
@@ -127,12 +140,14 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     final failedList = List<DownloadTask>.from(state.failedDownloads);
 
     // Find existing index in active list to preserve position
-    final existingIndex = activeList.indexWhere((t) => t.id == task.id);
+    final existingIndex = activeList.indexWhere(
+      (listItem) => listItem.id == task.id,
+    );
 
     // Remove from all lists first
-    activeList.removeWhere((t) => t.id == task.id);
-    completedList.removeWhere((t) => t.id == task.id);
-    failedList.removeWhere((t) => t.id == task.id);
+    activeList.removeWhere((listItem) => listItem.id == task.id);
+    completedList.removeWhere((listItem) => listItem.id == task.id);
+    failedList.removeWhere((listItem) => listItem.id == task.id);
 
     // Add to appropriate list based on status
     if (task.status == DownloadStatus.completed) {
@@ -230,11 +245,16 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
   }
 }
 
-final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>((ref) {
+final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>((
+  ref,
+) {
   final service = ref.watch(downloadServiceProvider);
   // Use read instead of watch to avoid recreating the notifier when settings change
   final settings = ref.read(settingsProvider);
-  final notifier = DownloadNotifier(service, maxConcurrentDownloads: settings.maxConcurrentDownloads);
+  final notifier = DownloadNotifier(
+    service,
+    maxConcurrentDownloads: settings.maxConcurrentDownloads,
+  );
 
   // Listen for settings changes and update the service directly
   ref.listen<SettingsState>(settingsProvider, (previous, next) {
@@ -248,7 +268,11 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
 
 // Helper provider to check if a slug is downloaded
 // Uses downloadedSlugsProvider for efficient lookup and auto-refresh
-final isDownloadedProvider = Provider.family<AsyncValue<bool>, String>((ref, slug) {
+final isDownloadedProvider = Provider.family<AsyncValue<bool>, String>((
+  ref,
+  slug,
+) {
   final slugsAsync = ref.watch(downloadedSlugsProvider);
+
   return slugsAsync.whenData((slugs) => slugs.contains(slug));
 });

@@ -15,6 +15,7 @@ final entryProvider = FutureProvider.family<RomEntry, String>((
   slug,
 ) async {
   final api = ref.watch(crocDbApiProvider);
+
   return api.getEntry(slug);
 });
 
@@ -62,9 +63,12 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+
     // Track this entry as recently viewed
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(recentlyViewedProvider.notifier).addEntry(
+    WidgetsBinding.instance.addPostFrameCallback((debugLabel) {
+      ref
+          .read(recentlyViewedProvider.notifier)
+          .addEntry(
             slug: widget.entry.slug,
             title: widget.entry.title,
             platform: widget.entry.platform,
@@ -98,10 +102,13 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
     sorted.sort((a, b) {
       final aIsFast = a.host.toLowerCase().contains('internet archive');
       final bIsFast = b.host.toLowerCase().contains('internet archive');
+
       if (aIsFast && !bIsFast) return -1;
       if (!aIsFast && bIsFast) return 1;
+
       return 0;
     });
+
     return sorted;
   }
 
@@ -201,7 +208,7 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
               // Already downloaded badge
               isDownloadedAsync.when(
                 loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (error, stackTrace) => const SizedBox.shrink(),
                 data: (isDownloaded) => isDownloaded
                     ? Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -417,11 +424,9 @@ class _FavoriteButton extends ConsumerWidget {
     final isFavoriteAsync = ref.watch(isFavoriteProvider(entry.slug));
 
     return isFavoriteAsync.when(
-      loading: () => const IconButton(
-        onPressed: null,
-        icon: Icon(Icons.favorite_border),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
+      loading: () =>
+          const IconButton(onPressed: null, icon: Icon(Icons.favorite_border)),
+      error: (error, stackTrace) => const SizedBox.shrink(),
       data: (isFavorite) {
         final iconColor = hasBoxart && !isCollapsed ? Colors.white : null;
         return IconButton(
@@ -436,7 +441,9 @@ class _FavoriteButton extends ConsumerWidget {
                 : null,
           ),
           onPressed: () async {
-            await ref.read(favoritesProvider.notifier).toggleFavorite(
+            await ref
+                .read(favoritesProvider.notifier)
+                .toggleFavorite(
                   slug: entry.slug,
                   title: entry.title,
                   platform: entry.platform,
@@ -449,9 +456,7 @@ class _FavoriteButton extends ConsumerWidget {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    isFavorite
-                        ? 'Removed from wishlist'
-                        : 'Added to wishlist',
+                    isFavorite ? 'Removed from wishlist' : 'Added to wishlist',
                   ),
                   duration: const Duration(seconds: 2),
                 ),
@@ -606,16 +611,14 @@ class _DownloadLinkCard extends ConsumerWidget {
   }
 
   Future<void> _startDownload(BuildContext context, WidgetRef ref) async {
-    // Check if this link requires Internet Archive login
     final requiresLogin = InternetArchiveAuthService.requiresLogin(link.type);
 
     if (requiresLogin) {
-      // Check if user is logged in
       final isLoggedIn = await ref.read(iaLoggedInProvider.future);
 
       if (!isLoggedIn) {
-        // Show login required dialog
         if (!context.mounted) return;
+
         final shouldLogin = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -638,7 +641,6 @@ class _DownloadLinkCard extends ConsumerWidget {
         );
 
         if (shouldLogin == true && context.mounted) {
-          // Navigate to login screen
           final loggedIn = await Navigator.push<bool>(
             context,
             MaterialPageRoute(
@@ -660,6 +662,7 @@ class _DownloadLinkCard extends ConsumerWidget {
 
     // Proceed with download
     if (!context.mounted) return;
+
     _addToDownloadQueue(context, ref);
   }
 

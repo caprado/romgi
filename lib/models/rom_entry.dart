@@ -26,12 +26,16 @@ class RomEntry {
       title: json['title'] as String,
       platform: json['platform'] as String,
       boxartUrl: json['boxart_url'] as String?,
-      regions: (json['regions'] as List<dynamic>?)
-              ?.map((e) => e as String)
+      regions:
+          (json['regions'] as List<dynamic>?)
+              ?.map((region) => region as String)
               .toList() ??
           [],
-      links: (json['links'] as List<dynamic>?)
-              ?.map((e) => DownloadLink.fromJson(e as Map<String, dynamic>))
+      links:
+          (json['links'] as List<dynamic>?)
+              ?.map(
+                (link) => DownloadLink.fromJson(link as Map<String, dynamic>),
+              )
               .toList() ??
           [],
     );
@@ -45,7 +49,7 @@ class RomEntry {
       'platform': platform,
       'boxart': boxartUrl,
       'regions': regions,
-      'links': links.map((e) => e.toJson()).toList(),
+      'links': links.map((link) => link.toJson()).toList(),
     };
   }
 }
@@ -69,8 +73,11 @@ class SearchResult {
 
   factory SearchResult.fromJson(Map<String, dynamic> json) {
     return SearchResult(
-      entries: (json['results'] as List<dynamic>?)
-              ?.map((e) => RomEntry.fromJson(e as Map<String, dynamic>))
+      entries:
+          (json['results'] as List<dynamic>?)
+              ?.map(
+                (result) => RomEntry.fromJson(result as Map<String, dynamic>),
+              )
               .toList() ??
           [],
       totalResults: json['total_results'] as int? ?? 0,

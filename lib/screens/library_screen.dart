@@ -150,9 +150,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 children: [
                   const Icon(Icons.favorite, size: 18),
                   const SizedBox(width: 8),
-                  Text(
-                    'Wishlist (${favoritesAsync.valueOrNull?.length ?? 0})',
-                  ),
+                  Text('Wishlist (${favoritesAsync.valueOrNull?.length ?? 0})'),
                 ],
               ),
             ),
@@ -173,82 +171,79 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
   Widget _buildDownloadedTab(LibraryState libraryState) {
     return Column(
-        children: [
-          // Platform filter chips
-          if (libraryState.platforms.isNotEmpty)
-            Container(
-              height: 50,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  FilterChip(
-                    label: const Text('All'),
-                    selected: libraryState.selectedPlatform == null,
-                    onSelected: (_) {
-                      ref
-                          .read(libraryProvider.notifier)
-                          .setSelectedPlatform(null);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ...libraryState.platforms.map((platform) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(PlatformNames.getDisplayName(platform)),
-                        selected: libraryState.selectedPlatform == platform,
-                        onSelected: (_) {
-                          ref
-                              .read(libraryProvider.notifier)
-                              .setSelectedPlatform(
-                                libraryState.selectedPlatform == platform
-                                    ? null
-                                    : platform,
-                              );
-                        },
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ),
-
-          // Library items
-          Expanded(
-            child: libraryState.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : libraryState.filteredItems.isEmpty
-                ? _buildEmptyState(libraryState)
-                : RefreshIndicator(
-                    onRefresh: () =>
-                        ref.read(libraryProvider.notifier).refresh(),
-                    child: ListView.builder(
-                      itemCount: libraryState.filteredItems.length,
-                      itemBuilder: (context, index) {
-                        final item = libraryState.filteredItems[index];
-                        final fileExists = libraryState.fileExists(
-                          item.filePath,
-                        );
-                        return _LibraryItemTile(
-                          item: item,
-                          fileExists: fileExists,
-                          onTap: () => _openFile(item),
-                          onDelete: () => _confirmDelete(item),
-                        );
+      children: [
+        // Platform filter chips
+        if (libraryState.platforms.isNotEmpty)
+          Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                FilterChip(
+                  label: const Text('All'),
+                  selected: libraryState.selectedPlatform == null,
+                  onSelected: (selected) {
+                    ref
+                        .read(libraryProvider.notifier)
+                        .setSelectedPlatform(null);
+                  },
+                ),
+                const SizedBox(width: 8),
+                ...libraryState.platforms.map((platform) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(PlatformNames.getDisplayName(platform)),
+                      selected: libraryState.selectedPlatform == platform,
+                      onSelected: (selected) {
+                        ref
+                            .read(libraryProvider.notifier)
+                            .setSelectedPlatform(
+                              libraryState.selectedPlatform == platform
+                                  ? null
+                                  : platform,
+                            );
                       },
                     ),
-                  ),
+                  );
+                }),
+              ],
+            ),
           ),
-        ],
+
+        // Library items
+        Expanded(
+          child: libraryState.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : libraryState.filteredItems.isEmpty
+              ? _buildEmptyState(libraryState)
+              : RefreshIndicator(
+                  onRefresh: () => ref.read(libraryProvider.notifier).refresh(),
+                  child: ListView.builder(
+                    itemCount: libraryState.filteredItems.length,
+                    itemBuilder: (context, index) {
+                      final item = libraryState.filteredItems[index];
+                      final fileExists = libraryState.fileExists(item.filePath);
+                      return _LibraryItemTile(
+                        item: item,
+                        fileExists: fileExists,
+                        onTap: () => _openFile(item),
+                        onDelete: () => _confirmDelete(item),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
   Widget _buildWishlistTab(AsyncValue<List<Favorite>> favoritesAsync) {
     return favoritesAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(
+      error: (error, stackTrace) => Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -298,8 +293,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 );
               },
               onRemove: () async {
-                await ref.read(favoritesProvider.notifier).removeFavorite(item.slug);
+                await ref
+                    .read(favoritesProvider.notifier)
+                    .removeFavorite(item.slug);
                 if (mounted) {
+                  // TODO: Fix this so its no longer an issue reported in flutter analyze
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Removed from wishlist')),
                   );
@@ -487,8 +485,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       await ref
           .read(libraryProvider.notifier)
           .deleteItem(item, deleteFile: false);
+
       // Invalidate download status providers so search results update
       ref.invalidate(downloadedSlugsProvider);
+
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -498,8 +498,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       await ref
           .read(libraryProvider.notifier)
           .deleteItem(item, deleteFile: true);
+
       // Invalidate download status providers so search results update
       ref.invalidate(downloadedSlugsProvider);
+
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -536,11 +538,11 @@ class _LibraryItemTile extends StatelessWidget {
               ? CachedNetworkImage(
                   imageUrl: item.boxartUrl!,
                   fit: BoxFit.cover,
-                  placeholder: (_, _) => Container(
+                  placeholder: (context, string) => Container(
                     color: Colors.grey[300],
                     child: const Icon(Icons.gamepad, color: Colors.grey),
                   ),
-                  errorWidget: (_, _, _) => Container(
+                  errorWidget: (context, string, error) => Container(
                     color: Colors.grey[300],
                     child: const Icon(Icons.gamepad, color: Colors.grey),
                   ),
@@ -632,11 +634,11 @@ class _WishlistItemTile extends StatelessWidget {
               ? CachedNetworkImage(
                   imageUrl: item.boxartUrl!,
                   fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
+                  placeholder: (context, string) => Container(
                     color: Colors.grey[300],
                     child: const Icon(Icons.gamepad, color: Colors.grey),
                   ),
-                  errorWidget: (_, __, ___) => Container(
+                  errorWidget: (context, string, error) => Container(
                     color: Colors.grey[300],
                     child: const Icon(Icons.gamepad, color: Colors.grey),
                   ),
@@ -647,11 +649,7 @@ class _WishlistItemTile extends StatelessWidget {
                 ),
         ),
       ),
-      title: Text(
-        item.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       subtitle: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(

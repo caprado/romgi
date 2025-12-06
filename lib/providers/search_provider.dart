@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../api/crocdb_api.dart';
 import '../models/models.dart';
 import 'api_provider.dart';
@@ -9,7 +10,7 @@ class SearchState {
   final List<String> selectedRegions;
   final SearchResult? result;
   final bool isLoading;
-  final dynamic error; // Store the actual error object for better error display
+  final dynamic error;
 
   const SearchState({
     this.query = '',
@@ -55,13 +56,16 @@ class SearchNotifier extends StateNotifier<SearchState> {
     try {
       final result = await _api.search(
         query: state.query.isEmpty ? null : state.query,
-        platforms: state.selectedPlatforms.isEmpty ? null : state.selectedPlatforms,
+        platforms: state.selectedPlatforms.isEmpty
+            ? null
+            : state.selectedPlatforms,
         regions: state.selectedRegions.isEmpty ? null : state.selectedRegions,
         page: 1,
       );
+
       state = state.copyWith(result: result, isLoading: false);
-    } catch (e) {
-      state = state.copyWith(error: e, isLoading: false);
+    } catch (error) {
+      state = state.copyWith(error: error, isLoading: false);
     }
   }
 
@@ -77,7 +81,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final nextPage = currentResult.currentPage + 1;
       final result = await _api.search(
         query: state.query.isEmpty ? null : state.query,
-        platforms: state.selectedPlatforms.isEmpty ? null : state.selectedPlatforms,
+        platforms: state.selectedPlatforms.isEmpty
+            ? null
+            : state.selectedPlatforms,
         regions: state.selectedRegions.isEmpty ? null : state.selectedRegions,
         page: nextPage,
       );
@@ -93,8 +99,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
       );
 
       state = state.copyWith(result: combinedResult, isLoading: false);
-    } catch (e) {
-      state = state.copyWith(error: e, isLoading: false);
+    } catch (error) {
+      state = state.copyWith(error: error, isLoading: false);
     }
   }
 
@@ -107,19 +113,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   void clearFilters() {
-    state = state.copyWith(
-      selectedPlatforms: [],
-      selectedRegions: [],
-    );
+    state = state.copyWith(selectedPlatforms: [], selectedRegions: []);
   }
 
-  /// Reset to initial state (no search performed)
   void reset() {
     state = const SearchState();
   }
 }
 
-final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((
+  ref,
+) {
   final api = ref.watch(crocDbApiProvider);
+
   return SearchNotifier(api);
 });

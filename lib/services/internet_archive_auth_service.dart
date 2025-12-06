@@ -5,13 +5,11 @@ class InternetArchiveAuthService {
   static const String _storageKeyLoggedIn = 'ia_logged_in';
   static const String _storageKeyUsername = 'ia_username';
 
-  // Required cookies for authenticated downloads
   static const List<String> _requiredCookies = [
     'logged-in-user',
     'logged-in-sig',
   ];
 
-  // All cookies to capture from login
   static const List<String> _allCookies = [
     'ia-auth',
     'logged-in-sig',
@@ -22,13 +20,12 @@ class InternetArchiveAuthService {
   final FlutterSecureStorage _storage;
 
   InternetArchiveAuthService({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage(
-        aOptions: AndroidOptions(
-          encryptedSharedPreferences: true,
-        ),
-      );
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            aOptions: AndroidOptions(encryptedSharedPreferences: true),
+          );
 
-  /// Check if user is logged in to Internet Archive
   Future<bool> isLoggedIn() async {
     try {
       final loggedIn = await _storage.read(key: _storageKeyLoggedIn);
@@ -40,7 +37,7 @@ class InternetArchiveAuthService {
         if (value == null || value.isEmpty) return false;
       }
       return true;
-    } catch (e) {
+    } catch (error) {
       // Handle platform exceptions gracefully
       return false;
     }
@@ -49,7 +46,7 @@ class InternetArchiveAuthService {
   Future<String?> getUsername() async {
     try {
       return await _storage.read(key: _storageKeyUsername);
-    } catch (e) {
+    } catch (error) {
       return null;
     }
   }
@@ -71,7 +68,7 @@ class InternetArchiveAuthService {
         await _storage.write(key: _storageKeyUsername, value: username);
         await _storage.write(key: _storageKeyLoggedIn, value: 'true');
       }
-    } catch (e) {
+    } catch (error) {
       // Ignore storage errors
     }
   }
@@ -90,7 +87,7 @@ class InternetArchiveAuthService {
       }
 
       return cookies.isNotEmpty ? cookies.join('; ') : null;
-    } catch (e) {
+    } catch (error) {
       return null;
     }
   }
@@ -104,21 +101,22 @@ class InternetArchiveAuthService {
           cookies[cookieName] = value;
         }
       }
+
       return cookies;
-    } catch (e) {
+    } catch (error) {
       return {};
     }
   }
 
-  /// Clear all stored cookies (logout)
   Future<void> logout() async {
     try {
       for (final cookieName in _allCookies) {
         await _storage.delete(key: '$_storageKeyPrefix$cookieName');
       }
+
       await _storage.delete(key: _storageKeyLoggedIn);
       await _storage.delete(key: _storageKeyUsername);
-    } catch (e) {
+    } catch (error) {
       // Ignore storage errors
     }
   }
@@ -127,12 +125,12 @@ class InternetArchiveAuthService {
   /// Checks the link type field for patterns like "Game (Encrypted) (Requires Internet Archive Log in)"
   static bool requiresLogin(String linkType) {
     final lower = linkType.toLowerCase();
+
     return lower.contains('requires internet archive') ||
         lower.contains('requires login') ||
         lower.contains('(encrypted)');
   }
 
-  /// Check if URL is from Internet Archive
   static bool isInternetArchiveUrl(String url) {
     return url.contains('archive.org');
   }

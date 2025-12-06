@@ -164,9 +164,9 @@ class _CurrentDownloadTile extends ConsumerWidget {
                       ? CachedNetworkImage(
                           imageUrl: task.boxartUrl!,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) =>
+                          placeholder: (context, string) =>
                               const Icon(Icons.videogame_asset),
-                          errorWidget: (_, __, ___) =>
+                          errorWidget: (context, string, error) =>
                               const Icon(Icons.videogame_asset),
                         )
                       : const Icon(Icons.videogame_asset, size: 32),
@@ -260,8 +260,10 @@ class _QueuedDownloadTile extends ConsumerWidget {
             ? CachedNetworkImage(
                 imageUrl: task.boxartUrl!,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => const Icon(Icons.videogame_asset),
-                errorWidget: (_, __, ___) => const Icon(Icons.videogame_asset),
+                placeholder: (context, string) =>
+                    const Icon(Icons.videogame_asset),
+                errorWidget: (context, string, error) =>
+                    const Icon(Icons.videogame_asset),
               )
             : const Icon(Icons.videogame_asset),
       ),
@@ -313,8 +315,10 @@ class _CompletedDownloadTile extends ConsumerWidget {
             ? CachedNetworkImage(
                 imageUrl: task.boxartUrl!,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => const Icon(Icons.videogame_asset),
-                errorWidget: (_, __, ___) => const Icon(Icons.videogame_asset),
+                placeholder: (context, string) =>
+                    const Icon(Icons.videogame_asset),
+                errorWidget: (context, string, error) =>
+                    const Icon(Icons.videogame_asset),
               )
             : const Icon(Icons.videogame_asset),
       ),
@@ -368,8 +372,10 @@ class _FailedDownloadTile extends ConsumerWidget {
             ? CachedNetworkImage(
                 imageUrl: task.boxartUrl!,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => const Icon(Icons.videogame_asset),
-                errorWidget: (_, __, ___) => const Icon(Icons.videogame_asset),
+                placeholder: (context, string) =>
+                    const Icon(Icons.videogame_asset),
+                errorWidget: (context, string, error) =>
+                    const Icon(Icons.videogame_asset),
               )
             : const Icon(Icons.videogame_asset),
       ),

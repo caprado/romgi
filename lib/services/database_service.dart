@@ -31,6 +31,7 @@ class DatabaseService {
         'ALTER TABLE downloads ADD COLUMN hidden_from_history INTEGER NOT NULL DEFAULT 0',
       );
     }
+
     if (oldVersion < 3) {
       // Add recently_viewed table
       await db.execute('''
@@ -128,7 +129,6 @@ class DatabaseService {
     );
   }
 
-  // Download task operations
   Future<void> insertDownload(DownloadTask task) async {
     final db = await database;
     await db.insert(
@@ -150,6 +150,7 @@ class DatabaseService {
 
   Future<void> deleteDownload(String id) async {
     final db = await database;
+
     await db.delete('downloads', where: 'id = ?', whereArgs: [id]);
   }
 
@@ -157,12 +158,14 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query('downloads', where: 'id = ?', whereArgs: [id]);
     if (maps.isEmpty) return null;
+
     return DownloadTask.fromMap(maps.first);
   }
 
   Future<List<DownloadTask>> getAllDownloads() async {
     final db = await database;
     final maps = await db.query('downloads', orderBy: 'created_at DESC');
+
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
   }
 
@@ -174,6 +177,7 @@ class DatabaseService {
       whereArgs: [status.index],
       orderBy: 'created_at ASC',
     );
+
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
   }
 
@@ -190,6 +194,7 @@ class DatabaseService {
       ],
       orderBy: 'created_at ASC',
     );
+
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
   }
 
@@ -201,10 +206,10 @@ class DatabaseService {
       whereArgs: [DownloadStatus.completed.index],
       orderBy: 'completed_at DESC',
     );
+
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
   }
 
-  /// Get completed downloads that are not hidden from download history
   Future<List<DownloadTask>> getVisibleCompletedDownloads() async {
     final db = await database;
     final maps = await db.query(
@@ -213,10 +218,10 @@ class DatabaseService {
       whereArgs: [DownloadStatus.completed.index],
       orderBy: 'completed_at DESC',
     );
+
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
   }
 
-  /// Hide a completed download from history (keeps it in library)
   Future<void> hideFromHistory(String id) async {
     final db = await database;
     await db.update(
@@ -227,7 +232,6 @@ class DatabaseService {
     );
   }
 
-  /// Hide all completed downloads from history
   Future<void> hideAllCompletedFromHistory() async {
     final db = await database;
     await db.update(
@@ -246,6 +250,7 @@ class DatabaseService {
       whereArgs: [slug, DownloadStatus.completed.index],
       limit: 1,
     );
+
     return result.isNotEmpty;
   }
 
@@ -257,6 +262,7 @@ class DatabaseService {
       whereArgs: [platform, DownloadStatus.completed.index],
       orderBy: 'title ASC',
     );
+
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
   }
 
@@ -278,8 +284,6 @@ class DatabaseService {
     );
   }
 
-  /// Check if a download with the same URL already exists (not failed)
-  /// Returns the existing download if found, null otherwise
   Future<DownloadTask?> findExistingDownload(String url) async {
     final db = await database;
     final maps = await db.query(
@@ -288,13 +292,12 @@ class DatabaseService {
       whereArgs: [url, DownloadStatus.failed.index],
       limit: 1,
     );
+
     if (maps.isEmpty) return null;
+
     return DownloadTask.fromMap(maps.first);
   }
 
-  // ============== Recently Viewed Operations ==============
-
-  /// Add or update a recently viewed entry
   Future<void> addRecentlyViewed({
     required String slug,
     required String title,
@@ -302,17 +305,13 @@ class DatabaseService {
     String? boxartUrl,
   }) async {
     final db = await database;
-    await db.insert(
-      'recently_viewed',
-      {
-        'slug': slug,
-        'title': title,
-        'platform': platform,
-        'boxart_url': boxartUrl,
-        'viewed_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('recently_viewed', {
+      'slug': slug,
+      'title': title,
+      'platform': platform,
+      'boxart_url': boxartUrl,
+      'viewed_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
 
     // Keep only last 50 entries
     await db.execute('''
@@ -322,7 +321,6 @@ class DatabaseService {
     ''');
   }
 
-  /// Get recently viewed entries
   Future<List<RecentlyViewed>> getRecentlyViewed({int limit = 20}) async {
     final db = await database;
     final maps = await db.query(
@@ -330,18 +328,15 @@ class DatabaseService {
       orderBy: 'viewed_at DESC',
       limit: limit,
     );
+
     return maps.map((map) => RecentlyViewed.fromMap(map)).toList();
   }
 
-  /// Clear all recently viewed entries
   Future<void> clearRecentlyViewed() async {
     final db = await database;
     await db.delete('recently_viewed');
   }
 
-  // ============== Favorites/Wishlist Operations ==============
-
-  /// Add to favorites
   Future<void> addFavorite({
     required String slug,
     required String title,
@@ -349,26 +344,20 @@ class DatabaseService {
     String? boxartUrl,
   }) async {
     final db = await database;
-    await db.insert(
-      'favorites',
-      {
-        'slug': slug,
-        'title': title,
-        'platform': platform,
-        'boxart_url': boxartUrl,
-        'added_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
+    await db.insert('favorites', {
+      'slug': slug,
+      'title': title,
+      'platform': platform,
+      'boxart_url': boxartUrl,
+      'added_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
-  /// Remove from favorites
   Future<void> removeFavorite(String slug) async {
     final db = await database;
     await db.delete('favorites', where: 'slug = ?', whereArgs: [slug]);
   }
 
-  /// Check if entry is favorited
   Future<bool> isFavorite(String slug) async {
     final db = await database;
     final result = await db.query(
@@ -377,20 +366,21 @@ class DatabaseService {
       whereArgs: [slug],
       limit: 1,
     );
+
     return result.isNotEmpty;
   }
 
-  /// Get all favorites
   Future<List<Favorite>> getFavorites() async {
     final db = await database;
     final maps = await db.query('favorites', orderBy: 'added_at DESC');
+
     return maps.map((map) => Favorite.fromMap(map)).toList();
   }
 
-  /// Get favorite count
   Future<int> getFavoriteCount() async {
     final db = await database;
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM favorites');
+
     return Sqflite.firstIntValue(result) ?? 0;
   }
 }
