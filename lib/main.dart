@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'providers/providers.dart';
 import 'screens/screens.dart';
+import 'services/rom_database_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,12 @@ void main() {
 
   runApp(const ProviderScope(child: RomgiApp()));
 }
+
+/// Provider to check if database is ready
+final databaseReadyProvider = FutureProvider<bool>((ref) async {
+  final dbService = RomDatabaseService();
+  return dbService.isDatabaseReady();
+});
 
 class RomgiApp extends ConsumerWidget {
   const RomgiApp({super.key});
@@ -48,7 +55,30 @@ class RomgiApp extends ConsumerWidget {
         appBarTheme: const AppBarTheme(scrolledUnderElevation: 0),
       ),
       themeMode: settings.flutterThemeMode,
-      home: const WithForegroundTask(child: MainNavigation()),
+      home: const _AppHome(),
+    );
+  }
+}
+
+class _AppHome extends ConsumerWidget {
+  const _AppHome();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dbReady = ref.watch(databaseReadyProvider);
+
+    return dbReady.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => DatabaseSetupScreen(
+        onComplete: () => ref.invalidate(databaseReadyProvider),
+      ),
+      data: (isReady) => isReady
+          ? const WithForegroundTask(child: MainNavigation())
+          : DatabaseSetupScreen(
+              onComplete: () => ref.invalidate(databaseReadyProvider),
+            ),
     );
   }
 }

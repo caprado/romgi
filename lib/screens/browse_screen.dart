@@ -62,8 +62,16 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
 
   Future<void> _navigateToRandomEntry() async {
     try {
-      final api = ref.read(crocDbApiProvider);
-      final randomEntry = await api.getRandomEntry();
+      final db = ref.read(romDatabaseProvider);
+      final randomEntry = await db.getRandomEntry();
+      if (randomEntry == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No entries found in database')),
+          );
+        }
+        return;
+      }
       if (mounted) {
         Navigator.push(
           context,

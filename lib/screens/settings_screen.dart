@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/providers.dart';
+import '../services/rom_database_service.dart';
 import '../services/storage_service.dart';
 import '../utils/utils.dart';
 import 'internet_archive_login_screen.dart';
@@ -262,11 +263,7 @@ class SettingsScreen extends ConsumerWidget {
 
                 const _UpdateTile(),
 
-                const ListTile(
-                  leading: Icon(Icons.storage),
-                  title: Text('Data Source'),
-                  subtitle: Text('CrocDB (api.crocdb.net)'),
-                ),
+                const _DatabaseInfoTile(),
 
                 ListTile(
                   leading: const Icon(Icons.code),
@@ -613,6 +610,207 @@ class _InternetArchiveAccountTile extends ConsumerWidget {
           const SnackBar(content: Text('Logged out from Internet Archive')),
         );
       }
+    }
+  }
+}
+
+/// Provider to get local database version info
+final localDbVersionProvider = FutureProvider<DatabaseVersion?>((ref) async {
+  final dbService = RomDatabaseService();
+  return dbService.getLocalVersion();
+});
+
+/// Provider to check for database updates
+final dbUpdateAvailableProvider = FutureProvider<DatabaseVersion?>((ref) async {
+  final dbService = RomDatabaseService();
+  return dbService.checkForUpdate();
+});
+
+class _DatabaseInfoTile extends ConsumerWidget {
+  const _DatabaseInfoTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final localVersionAsync = ref.watch(localDbVersionProvider);
+    final updateAvailableAsync = ref.watch(dbUpdateAvailableProvider);
+
+    return localVersionAsync.when(
+      loading: () => const ListTile(
+        leading: Icon(Icons.storage),
+        title: Text('ROM Database'),
+        subtitle: Text('Loading...'),
+      ),
+      error: (error, stack) => ListTile(
+        leading: const Icon(Icons.storage),
+        title: const Text('ROM Database'),
+        subtitle: const Text('Error loading database info'),
+        trailing: IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: () => ref.invalidate(localDbVersionProvider),
+        ),
+      ),
+      data: (localVersion) {
+        if (localVersion == null) {
+          return ListTile(
+            leading: const Icon(Icons.storage),
+            title: const Text('ROM Database'),
+            subtitle: const Text('Not installed'),
+            trailing: FilledButton(
+              onPressed: () => _showUpdateDialog(context, ref, null),
+              child: const Text('Download'),
+            ),
+          );
+        }
+
+        final hasUpdate = updateAvailableAsync.valueOrNull != null;
+
+        return ListTile(
+          leading: Icon(
+            Icons.storage,
+            color: hasUpdate ? Theme.of(context).colorScheme.primary : null,
+          ),
+          title: const Text('ROM Database'),
+          subtitle: Text(
+            'Version ${localVersion.version} - ${_formatNumber(localVersion.entries)} entries',
+          ),
+          trailing: hasUpdate
+              ? FilledButton(
+                  onPressed: () => _showUpdateDialog(
+                    context,
+                    ref,
+                    updateAvailableAsync.valueOrNull,
+                  ),
+                  child: const Text('Update'),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () {
+                    ref.invalidate(localDbVersionProvider);
+                    ref.invalidate(dbUpdateAvailableProvider);
+                  },
+                ),
+        );
+      },
+    );
+  }
+
+  String _formatNumber(int number) {
+    if (number >= 1000000) {
+      return '${(number / 1000000).toStringAsFixed(1)}M';
+    } else if (number >= 1000) {
+      return '${(number / 1000).toStringAsFixed(0)}K';
+    }
+    return number.toString();
+  }
+
+  void _showUpdateDialog(
+    BuildContext context,
+    WidgetRef ref,
+    DatabaseVersion? newVersion,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _DatabaseUpdateDialog(newVersion: newVersion),
+    ).then((_) {
+      // Refresh providers after dialog closes
+      ref.invalidate(localDbVersionProvider);
+      ref.invalidate(dbUpdateAvailableProvider);
+    });
+  }
+}
+
+class _DatabaseUpdateDialog extends ConsumerStatefulWidget {
+  final DatabaseVersion? newVersion;
+
+  const _DatabaseUpdateDialog({this.newVersion});
+
+  @override
+  ConsumerState<_DatabaseUpdateDialog> createState() =>
+      _DatabaseUpdateDialogState();
+}
+
+class _DatabaseUpdateDialogState extends ConsumerState<_DatabaseUpdateDialog> {
+  bool _isDownloading = false;
+  double _progress = 0.0;
+  String? _error;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_isDownloading ? 'Updating Database' : 'Update Database'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_error != null) ...[
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (_isDownloading) ...[
+            LinearProgressIndicator(value: _progress),
+            const SizedBox(height: 8),
+            Text('${(_progress * 100).toInt()}%'),
+          ] else if (widget.newVersion != null) ...[
+            Text(
+              'A new database version is available.',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Size: ${(widget.newVersion!.size / 1024 / 1024).toStringAsFixed(1)} MB',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ] else ...[
+            const Text('Download the ROM database to browse and search games.'),
+          ],
+        ],
+      ),
+      actions: [
+        if (!_isDownloading)
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        if (!_isDownloading)
+          FilledButton(
+            onPressed: _startDownload,
+            child: const Text('Download'),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _startDownload() async {
+    setState(() {
+      _isDownloading = true;
+      _progress = 0.0;
+      _error = null;
+    });
+
+    try {
+      final dbService = RomDatabaseService();
+      await dbService.downloadDatabase(
+        onProgress: (progress) {
+          setState(() {
+            _progress = progress;
+          });
+        },
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Database updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isDownloading = false;
+        _error = 'Download failed: $e';
+      });
     }
   }
 }

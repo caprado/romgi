@@ -10,13 +10,13 @@ import '../utils/utils.dart';
 import '../widgets/widgets.dart';
 import 'internet_archive_login_screen.dart';
 
-final entryProvider = FutureProvider.family<RomEntry, String>((
+final entryProvider = FutureProvider.family<RomEntry?, String>((
   ref,
   slug,
 ) async {
-  final api = ref.watch(crocDbApiProvider);
+  final db = ref.watch(romDatabaseProvider);
 
-  return api.getEntry(slug);
+  return db.getEntry(slug);
 });
 
 class EntryDetailScreen extends ConsumerWidget {
@@ -39,7 +39,12 @@ class EntryDetailScreen extends ConsumerWidget {
             onRetry: () => ref.invalidate(entryProvider(slug)),
           ),
         ),
-        data: (entry) => _EntryDetailContent(entry: entry),
+        data: (entry) => entry == null
+            ? Scaffold(
+                appBar: AppBar(),
+                body: const Center(child: Text('Entry not found')),
+              )
+            : _EntryDetailContent(entry: entry),
       ),
     );
   }

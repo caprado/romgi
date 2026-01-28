@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/crocdb_api.dart';
 import '../models/models.dart';
+import '../services/rom_database_service.dart';
 import 'api_provider.dart';
 
 class SearchState {
@@ -42,9 +42,9 @@ class SearchState {
 }
 
 class SearchNotifier extends StateNotifier<SearchState> {
-  final CrocDbApi _api;
+  final RomDatabaseService _db;
 
-  SearchNotifier(this._api) : super(const SearchState());
+  SearchNotifier(this._db) : super(const SearchState());
 
   Future<void> search({String? query}) async {
     state = state.copyWith(
@@ -54,7 +54,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     );
 
     try {
-      final result = await _api.search(
+      final result = await _db.search(
         query: state.query.isEmpty ? null : state.query,
         platforms: state.selectedPlatforms.isEmpty
             ? null
@@ -79,7 +79,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
     try {
       final nextPage = currentResult.currentPage + 1;
-      final result = await _api.search(
+      final result = await _db.search(
         query: state.query.isEmpty ? null : state.query,
         platforms: state.selectedPlatforms.isEmpty
             ? null
@@ -124,7 +124,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((
   ref,
 ) {
-  final api = ref.watch(crocDbApiProvider);
+  final db = ref.watch(romDatabaseProvider);
 
-  return SearchNotifier(api);
+  return SearchNotifier(db);
 });

@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/crocdb_api.dart';
+import '../services/rom_database_service.dart';
 
-final crocDbApiProvider = Provider<CrocDbApi>((ref) {
-  return CrocDbApi();
+/// Provider for the ROM database service (local SQLite database)
+final romDatabaseProvider = Provider<RomDatabaseService>((ref) {
+  return RomDatabaseService();
 });

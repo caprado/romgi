@@ -1,0 +1,4 @@
+requests
+cloudscraper
+unidecode
+playwright

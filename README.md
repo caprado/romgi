@@ -83,7 +83,7 @@ Links requiring login are marked with a purple "Login Required" badge.
 
 ## Supported Platforms
 
-romgi supports all platforms available through the CrocDB database, including:
+romgi supports a wide range of retro gaming platforms, including:
 
 - **Nintendo**: NES, SNES, N64, GameCube, Wii, Game Boy, GBA, DS, 3DS, and more
 - **Sony**: PlayStation, PS2, PSP, PS Vita
@@ -122,7 +122,7 @@ The built APK will be located at `build/app/outputs/flutter-apk/app-release.apk`
 - **Minimum Android Version**: Android 7.0 (API 24)
 - **Target Android Version**: Latest stable
 - **Framework**: Flutter/Dart
-- **Data Source**: [CrocDB](https://api.crocdb.net/)
+- **Data Source**: Built-in ROM Database
 
 ### Key Dependencies
 
@@ -142,7 +142,7 @@ romgi is a tool for downloading content; it does not host any ROMs or copyrighte
 
 ## Credits
 
-- **Data Source**: [CrocDB](https://crocdb.net/) - ROM database API
+- **Data Sources**: Myrient, Internet Archive, NoPayStation, MarioCube
 - **Inspiration**: [pkgi-psp](https://github.com/bucanero/pkgi-psp), [Kekatsu-DS](https://github.com/cavv-dev/Kekatsu-DS)
 - **Framework**: [Flutter](https://flutter.dev/)
 

@@ -4,7 +4,7 @@ import '../models/models.dart';
 import 'api_provider.dart';
 
 final platformsProvider = FutureProvider<List<Platform>>((ref) async {
-  final api = ref.watch(crocDbApiProvider);
+  final db = ref.watch(romDatabaseProvider);
 
-  return api.getPlatforms();
+  return db.getPlatforms();
 });

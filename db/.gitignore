@@ -1,0 +1,33 @@
+# Cached HTTP responses
+cache/
+
+# Downloaded metadata files
+data/
+
+# Generated static files (PS3/PSV)
+static/
+
+# Uncompressed database (only commit the .gz)
+*.db
+!romdb.db.gz
+
+# Temp files
+*.db-journal
+*_temp.db
+*_old.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.env
+venv/
+ENV/
+
+# Config files (use examples instead)
+config.json
+
+# Credentials (never commit)
+*_creds.json
