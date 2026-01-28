@@ -41,11 +41,13 @@ jobs:
         run: playwright install chromium
 
       - name: Create Internet Archive credentials
-        if: ${{ secrets.IA_USERNAME != '' }}
         env:
           IA_USERNAME: ${{ secrets.IA_USERNAME }}
           IA_PASSWORD: ${{ secrets.IA_PASSWORD }}
-        run: python -c "import json; json.dump({'username':'$IA_USERNAME','password':'$IA_PASSWORD'}, open('scrapers/internet_archive_creds.json','w'))"
+        run: |
+          if [ -n "$IA_USERNAME" ]; then
+            python -c "import json,os; json.dump({'username':os.environ['IA_USERNAME'],'password':os.environ['IA_PASSWORD']}, open('scrapers/internet_archive_creds.json','w'))"
+          fi
 
       - name: Run database generation workflow
         run: python workflow.py --use-cached
