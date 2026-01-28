@@ -93,4 +93,5 @@ jobs:
           git config user.email github-actions@github.com
           git add db/romdb.db.gz db/version.json
           git commit -m "Update database $(date +%Y%m%d) - ${{ steps.stats.outputs.entry_count }} entries" || exit 0
+          git pull --rebase
           git push
