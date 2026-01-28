@@ -48,12 +48,40 @@ def get_login_session(creds_path='scrapers/internet_archive_creds.json'):
         return None
 
 
-def extract_entries(response, source, platform, base_url):
+def extract_entries(response, source, platform, base_url, debug=False):
     """Extract entries from the HTML response using regex."""
     entries = []
-    # IA format when logged in: <tr><td><a href="encoded_name">display_name</a>...</td><td>date</td><td>size</td>
-    pattern = r'<tr[^>]*>\s*<td><a href="([^"]+)">([^<]+)</a>.*?</td>\s*<td>[^<]*</td>\s*<td>([^<]+)</td>'
-    matches = re.findall(pattern, response, re.DOTALL)
+
+    # Try multiple patterns for different IA HTML formats
+    patterns = [
+        # Format 1: Standard table with 3 columns (link, date, size)
+        r'<tr[^>]*>\s*<td[^>]*><a href="([^"]+)"[^>]*>([^<]+)</a>.*?</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>([^<]+)</td>',
+        # Format 2: With possible nested spans/divs
+        r'<tr[^>]*>.*?<a href="([^"]+)"[^>]*>([^<]+)</a>.*?</td>.*?</td>.*?<td[^>]*>\s*([0-9][^<]*)</td>',
+        # Format 3: Directory listing format
+        r'href="([^"]+)"[^>]*>([^<]+)</a>\s*</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>([0-9][^<]*[KMGT]?i?B?)</td>',
+    ]
+
+    matches = []
+    for i, pattern in enumerate(patterns):
+        matches = re.findall(pattern, response, re.DOTALL | re.IGNORECASE)
+        if matches:
+            if debug:
+                print(f"      Pattern {i+1} matched {len(matches)} entries")
+            break
+
+    if not matches and debug:
+        # Save a snippet of the response for debugging
+        print(f"      DEBUG: No pattern matched. Response snippet:")
+        # Find table content
+        table_match = re.search(r'<table[^>]*class="[^"]*directory[^"]*"[^>]*>(.*?)</table>', response, re.DOTALL | re.IGNORECASE)
+        if table_match:
+            print(f"      {table_match.group(0)[:500]}...")
+        else:
+            # Just show first few tr elements
+            tr_matches = re.findall(r'<tr[^>]*>.*?</tr>', response[:5000], re.DOTALL)
+            for tr in tr_matches[:2]:
+                print(f"      {tr[:300]}...")
 
     for link, filename, size_str in matches:
         filename = filename.strip()
@@ -140,6 +168,8 @@ def scrape(source, platform, use_cached=False):
                 session = get_login_session()
                 if not session:
                     print("Warning: Unable to create Internet Archive session, skipping login-required content...")
+                    # Try debug mode to see what HTML we got
+                    extract_entries(response, source, platform, url, debug=True)
                     continue
 
             # Retry with login session (bypass cache to get authenticated response)
@@ -155,6 +185,8 @@ def scrape(source, platform, use_cached=False):
                         link['type'] += " (Requires Internet Archive Log in)"
                 entries.extend(parsed_entries)
             else:
+                # Show debug info when parsing fails
                 print(f"Warning: No entries parsed from {url}, skipping...")
+                extract_entries(response, source, platform, url, debug=True)
 
     return entries
