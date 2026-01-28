@@ -14,6 +14,12 @@ from utils.parse_utils import size_str_to_bytes, join_urls
 
 HOST_NAME = 'MarioCube'
 
+# Curl-like headers to get plain-text directory listing instead of HTML
+CURL_HEADERS = {
+    'User-Agent': 'curl/8.0',
+    'Accept': '*/*'
+}
+
 
 def extract_entries(response, source, platform, base_url):
     """Extract entries from the ANSI-colored directory listing response."""
@@ -90,7 +96,7 @@ def fetch_response(url, use_cached, session=None):
 def scrape(source, platform, use_cached=False):
     """Scrape entries from MarioCube based on the source configuration."""
     entries = []
-    session = create_scraper_session()
+    session = create_scraper_session(CURL_HEADERS)
 
     for url in source['urls']:
         # Fetch the response for each URL

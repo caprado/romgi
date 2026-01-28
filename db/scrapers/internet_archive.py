@@ -51,19 +51,23 @@ def get_login_session(creds_path='scrapers/internet_archive_creds.json'):
 def extract_entries(response, source, platform, base_url):
     """Extract entries from the HTML response using regex."""
     entries = []
-    # Regex pattern to extract link, title, and size from table rows
-    pattern = (
-        r"<tr >.*?<td><a href=\"(.*?)\">(.*?)</a>.*?</td>.*?<td>.*?</td>.*?<td>(.*?)</td>.*?</tr>"
-    )
+    # IA format when logged in: <tr><td><a href="encoded_name">display_name</a>...</td><td>date</td><td>size</td>
+    pattern = r'<tr[^>]*>\s*<td><a href="([^"]+)">([^<]+)</a>.*?</td>\s*<td>[^<]*</td>\s*<td>([^<]+)</td>'
     matches = re.findall(pattern, response, re.DOTALL)
 
-    for link, title, size_str in matches:
+    for link, filename, size_str in matches:
+        filename = filename.strip()
+        size_str = size_str.strip()
+
+        # Skip non-file entries (parent directory link, etc.)
+        if not filename or 'parent directory' in filename.lower() or '.' not in filename:
+            continue
+
         # Apply the filter from the source configuration
-        match = re.match(source['filter'], title)
+        match = re.match(source['filter'], filename)
         if not match:
             continue
 
-        filename = title
         title = match.group(1)  # Extract the filtered title
 
         # Create an entry and add it to the list
@@ -138,8 +142,8 @@ def scrape(source, platform, use_cached=False):
                     print("Warning: Unable to create Internet Archive session, skipping login-required content...")
                     continue
 
-            # Retry with login session
-            response = fetch_response(url, session, use_cached)
+            # Retry with login session (bypass cache to get authenticated response)
+            response = fetch_response(url, session, use_cached=False)
             if not response:
                 print(f"Warning: Failed to get response from {url} with login, skipping...")
                 continue
