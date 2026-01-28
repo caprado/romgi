@@ -655,9 +655,32 @@ class _DatabaseInfoTile extends ConsumerWidget {
             leading: const Icon(Icons.storage),
             title: const Text('ROM Database'),
             subtitle: const Text('Not installed'),
-            trailing: FilledButton(
-              onPressed: () => _showUpdateDialog(context, ref, null),
-              child: const Text('Download'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton(
+                  onPressed: () => _showUpdateDialog(context, ref, null),
+                  child: const Text('Download'),
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _confirmDelete(context, ref);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline, color: Colors.red),
+                        title: Text('Delete & Reset'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           );
         }
@@ -673,8 +696,11 @@ class _DatabaseInfoTile extends ConsumerWidget {
           subtitle: Text(
             'Version ${localVersion.version} - ${_formatNumber(localVersion.entries)} entries',
           ),
-          trailing: hasUpdate
-              ? FilledButton(
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasUpdate)
+                FilledButton(
                   onPressed: () => _showUpdateDialog(
                     context,
                     ref,
@@ -682,16 +708,73 @@ class _DatabaseInfoTile extends ConsumerWidget {
                   ),
                   child: const Text('Update'),
                 )
-              : IconButton(
+              else
+                IconButton(
                   icon: const Icon(Icons.refresh),
                   onPressed: () {
                     ref.invalidate(localDbVersionProvider);
                     ref.invalidate(dbUpdateAvailableProvider);
                   },
                 ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  if (value == 'delete') {
+                    _confirmDelete(context, ref);
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline, color: Colors.red),
+                      title: Text('Delete Database'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Database'),
+        content: const Text(
+          'This will delete the ROM database. You will need to download it again to browse ROMs.\n\nThis can help fix issues with a corrupted database.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final dbService = RomDatabaseService();
+      await dbService.deleteDatabase();
+      ref.invalidate(localDbVersionProvider);
+      ref.invalidate(dbUpdateAvailableProvider);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Database deleted')),
+        );
+      }
+    }
   }
 
   String _formatNumber(int number) {

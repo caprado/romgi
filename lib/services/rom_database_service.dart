@@ -76,9 +76,39 @@ class RomDatabaseService {
   }
 
   /// Check if the database is ready to use
+  /// This verifies the file exists AND the database is usable
   Future<bool> isDatabaseReady() async {
     final dbPath = await _dbPath;
-    return File(dbPath).existsSync();
+    if (!File(dbPath).existsSync()) return false;
+
+    // Verify the database is actually usable (catches FTS5/FTS4 issues)
+    try {
+      final db = await database;
+      // Try a simple query that uses FTS to verify it works
+      await db.rawQuery('SELECT COUNT(*) FROM entries LIMIT 1');
+      return true;
+    } catch (e) {
+      // Database exists but is corrupted or incompatible - delete it
+      await deleteDatabase();
+      return false;
+    }
+  }
+
+  /// Delete the local database (for re-download or reset)
+  Future<void> deleteDatabase() async {
+    await _closeDatabase();
+    final dbPath = await _dbPath;
+    final versionPath = await _localVersionPath;
+
+    final dbFile = File(dbPath);
+    if (dbFile.existsSync()) {
+      await dbFile.delete();
+    }
+
+    final versionFile = File(versionPath);
+    if (versionFile.existsSync()) {
+      await versionFile.delete();
+    }
   }
 
   /// Get the local database version, if available

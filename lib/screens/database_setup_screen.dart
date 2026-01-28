@@ -191,6 +191,7 @@ class _DatabaseSetupScreenState extends ConsumerState<DatabaseSetupScreen> {
     switch (state.status) {
       case DatabaseSetupStatus.checking:
         return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: 24),
@@ -203,6 +204,7 @@ class _DatabaseSetupScreenState extends ConsumerState<DatabaseSetupScreen> {
 
       case DatabaseSetupStatus.ready:
         return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.check_circle,
@@ -219,6 +221,7 @@ class _DatabaseSetupScreenState extends ConsumerState<DatabaseSetupScreen> {
 
       case DatabaseSetupStatus.needsDownload:
         return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.cloud_download,
