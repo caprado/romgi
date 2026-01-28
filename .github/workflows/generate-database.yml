@@ -53,7 +53,7 @@ jobs:
           fi
 
       - name: Run database generation workflow
-        run: python workflow.py --use-cached
+        run: python workflow.py
 
       - name: Compress database
         run: gzip -f -k romdb.db
