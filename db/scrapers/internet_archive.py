@@ -1,19 +1,17 @@
 """
-This module provides functionality to scrape data from Internet Archive indexes. 
-It includes methods for logging into the Internet Archive, fetching responses, 
-extracting entries from HTML content, and creating structured data entries.
+This module provides functionality to scrape data from Internet Archive indexes.
+It extracts entries from HTML content and creates structured data entries.
 """
 import re
-import cloudscraper
+import urllib.parse
 import html
 import json
-import sys
+import cloudscraper
 from utils import cache_manager
 from utils.scrape_utils import fetch_url
 from utils.parse_utils import size_bytes_to_str, size_str_to_bytes, join_urls
 
 HOST_NAME = 'Internet Archive'
-
 LOGIN_URL = 'https://archive.org/account/login'
 
 session = None
@@ -22,13 +20,10 @@ session = None
 def get_login_session(creds_path='scrapers/internet_archive_creds.json'):
     """Create and return a session logged into the Internet Archive."""
     try:
-        # Load credentials
         with open(creds_path, 'r') as f:
             creds = json.load(f)
 
         session = cloudscraper.create_scraper()
-
-        # Initial GET request to establish session cookies
         session.get(LOGIN_URL)
 
         r = session.post(LOGIN_URL, data={
@@ -51,49 +46,56 @@ def get_login_session(creds_path='scrapers/internet_archive_creds.json'):
 def extract_entries(response, source, platform, base_url, debug=False):
     """Extract entries from the HTML response using regex."""
     entries = []
-
-    # Try multiple patterns for different IA HTML formats
-    patterns = [
-        # Format 1: Standard table with 3 columns (link, date, size)
-        r'<tr[^>]*>\s*<td[^>]*><a href="([^"]+)"[^>]*>([^<]+)</a>.*?</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>([^<]+)</td>',
-        # Format 2: With possible nested spans/divs
-        r'<tr[^>]*>.*?<a href="([^"]+)"[^>]*>([^<]+)</a>.*?</td>.*?</td>.*?<td[^>]*>\s*([0-9][^<]*)</td>',
-        # Format 3: Directory listing format
-        r'href="([^"]+)"[^>]*>([^<]+)</a>\s*</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>([0-9][^<]*[KMGT]?i?B?)</td>',
-    ]
-
     matches = []
-    for i, pattern in enumerate(patterns):
-        matches = re.findall(pattern, response, re.DOTALL | re.IGNORECASE)
-        if matches:
-            if debug:
-                print(f"      Pattern {i+1} matched {len(matches)} entries")
-            break
+    # Common ROM file extensions
+    file_ext = r'(zip|chd|iso|7z|rar|nsp|xci|wbfs|rvz|cso|pbp|pkg|bin|nds|3ds|cia|gba|gbc|gb|n64|z64|v64|nes|sfc|smc|gen|md|sms|gg|pce|vpk|app|cue|wad|dol|gcm|wux|wua|lnx|lyx|a26|a78|col|int|jag|ngp|ngc|psx|ws|wsc|vb|vec)'
 
-    if not matches and debug:
-        # Save a snippet of the response for debugging
-        print(f"      DEBUG: No pattern matched. Response snippet:")
-        # Find table content
-        table_match = re.search(r'<table[^>]*class="[^"]*directory[^"]*"[^>]*>(.*?)</table>', response, re.DOTALL | re.IGNORECASE)
-        if table_match:
-            print(f"      {table_match.group(0)[:500]}...")
-        else:
-            # Just show first few tr elements
-            tr_matches = re.findall(r'<tr[^>]*>.*?</tr>', response[:5000], re.DOTALL)
-            for tr in tr_matches[:2]:
-                print(f"      {tr[:300]}...")
+    # Strategy 1: Find linked files (public downloads)
+    # Pattern: <a href="filename.ext">filename.ext</a>
+    link_pattern = rf'<a\s*href="([^"]+\.{file_ext})"[^>]*>'
+    for match in re.finditer(link_pattern, response, re.IGNORECASE):
+        href = match.group(1)
+        start_pos = match.end()
+        chunk = response[start_pos:start_pos + 500]
+        size_match = re.search(r'(\d+\.?\d*)\s*([KMGT])i?B?', chunk, re.IGNORECASE)
+        size_str = f"{size_match.group(1)}{size_match.group(2)}" if size_match else ''
+        filename = html.unescape(urllib.parse.unquote(href))
+        matches.append((href, filename, size_str))
+
+    if debug:
+        print(f"      Found {len(matches)} linked files")
+
+    # Strategy 2: Find restricted files (no links, just text in <td>)
+    # These rows have class "__restricted-file" and plain text filenames
+    # Pattern: <tr class="...__restricted-file"><td>filename.ext</td><td>date</td><td>size</td>
+    restricted_pattern = rf'<tr[^>]*restricted-file[^>]*>\s*<td>([^<]+\.{file_ext})</td>\s*<td>[^<]*</td>\s*<td>([^<]*)</td>'
+    for match in re.finditer(restricted_pattern, response, re.IGNORECASE | re.DOTALL):
+        filename = html.unescape(match.group(1).strip())
+        size_str = match.group(3).strip()
+        size_match = re.search(r'(\d+\.?\d*)\s*([KMGT])', size_str, re.IGNORECASE)
+        size_str = f"{size_match.group(1)}{size_match.group(2)}" if size_match else ''
+        href = urllib.parse.quote(filename)
+        matches.append((href, filename, size_str))
+
+    if debug:
+        print(f"      Found {len(matches)} total files (including restricted)")
 
     for link, filename, size_str in matches:
         filename = filename.strip()
-        size_str = size_str.strip()
+        # Strip HTML tags from size (e.g., <span>2.5G</span> -> 2.5G)
+        size_str = re.sub(r'<[^>]+>', '', size_str).strip()
 
         # Skip non-file entries (parent directory link, etc.)
         if not filename or 'parent directory' in filename.lower() or '.' not in filename:
+            if debug:
+                print(f"      Skipped (no file): link={link[:30]}, filename={filename[:30] if filename else 'empty'}")
             continue
 
         # Apply the filter from the source configuration
         match = re.match(source['filter'], filename)
         if not match:
+            if debug:
+                print(f"      Skipped (filter): {filename[:50]} didn't match {source['filter'][:50]}")
             continue
 
         title = match.group(1)  # Extract the filtered title
@@ -134,7 +136,8 @@ def create_entry(link, filename, title, size_str, source, platform, base_url):
 
 def fetch_response(url, session, use_cached):
     """Fetch the response from a URL, optionally using a cached version."""
-    short_url = url.split('/')[-1][:50] if '/' in url else url[:50]
+    url_stripped = url.rstrip('/')
+    short_url = url_stripped.split('/')[-1][:50] if '/' in url_stripped else url_stripped[:50]
 
     if use_cached:
         response = cache_manager.get_cached_response(url)

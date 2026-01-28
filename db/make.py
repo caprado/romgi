@@ -43,9 +43,15 @@ def get_parser(name):
     return PARSERS.get(name)
 
 
-def process_sources(sources, use_cached):
+def process_sources(sources, use_cached, scraper_filter=None):
     """Process the sources to scrape, parse, and insert data into the database."""
     for platform, source_list in sources.items():
+        # Filter sources by scraper if specified
+        if scraper_filter:
+            source_list = [s for s in source_list if s['scraper'] in scraper_filter]
+            if not source_list:
+                continue
+
         print(f"\n{platform}:")
         for i, source in enumerate(source_list, start=1):
             print(f"  {i}) ", end='')
@@ -74,12 +80,15 @@ def process_sources(sources, use_cached):
                 db_manager.insert_entry(entry)
 
 
-def make(use_cached=False, sources_file='sources.json'):
+def make(use_cached=False, sources_file='sources.json', scraper_filter=None):
     """Main function to initialize the database, process sources, and close the database."""
     sources = load_sources(sources_file)
     db_manager.init_database()
 
-    process_sources(sources, use_cached)
+    if scraper_filter:
+        print(f"Filtering to scrapers: {', '.join(scraper_filter)}")
+
+    process_sources(sources, use_cached, scraper_filter)
 
     db_manager.close_database()
     print("Database created successfully.")
@@ -94,9 +103,12 @@ if __name__ == '__main__':
 
     # Check for --sources argument
     sources_file = 'sources.json'
+    scraper_filter = None
     for i, arg in enumerate(args):
         if arg == '--sources' and i + 1 < len(args):
             sources_file = args[i + 1]
-            break
+        elif arg == '--scrapers' and i + 1 < len(args):
+            # Comma-separated list of scrapers to run
+            scraper_filter = [s.strip() for s in args[i + 1].split(',')]
 
-    make(use_cached, sources_file)
+    make(use_cached, sources_file, scraper_filter)

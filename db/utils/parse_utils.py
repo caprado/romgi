@@ -81,23 +81,36 @@ def size_bytes_to_str(size):
 
 def size_str_to_bytes(size_str):
     """Convert a human-readable size string to bytes."""
+    if not size_str or not size_str.strip():
+        return 0
+
     # Extract the first alphabetic character as the unit
-    for character in size_str:
-        if not character.isalpha():
-            continue
-        unit = character
-        break
+    unit = 'B'  # Default to bytes
+    for character in size_str.upper():
+        if character in 'BKMGT':
+            unit = character
+            break
 
     # Extract the numeric part of the size string
-    size = float(re.sub(r'[^\d\.]', '', size_str))
+    numeric_str = re.sub(r'[^\d\.]', '', size_str)
+    if not numeric_str:
+        return 0
+
+    try:
+        size = float(numeric_str)
+    except ValueError:
+        return 0
+
     if unit == 'B':
-        size = size
+        pass
     elif unit == 'K':
         size = size * 1024
     elif unit == 'M':
         size = size * 1024 * 1024
     elif unit == 'G':
         size = size * 1024 * 1024 * 1024
+    elif unit == 'T':
+        size = size * 1024 * 1024 * 1024 * 1024
 
     return int(size)
 

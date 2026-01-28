@@ -81,7 +81,8 @@ def parse_listing_lines(response):
 
 def fetch_response(url, use_cached, session=None):
     """Fetch the response from a URL, optionally using a cached version."""
-    short_url = url.split('/')[-1][:50] if '/' in url else url[:50]
+    url_stripped = url.rstrip('/')
+    short_url = url_stripped.split('/')[-1][:50] if '/' in url_stripped else url_stripped[:50]
 
     if use_cached:
         response = cache_manager.get_cached_response(url)

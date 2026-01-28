@@ -116,6 +116,10 @@ def create_scraper_session(headers=None):
 
 def fetch_url(url, session=None):
     """Fetch the content of a URL and cache the response."""
+    # Get short URL for display (handle trailing slashes)
+    url_stripped = url.rstrip('/')
+    short_url = url_stripped.split('/')[-1][:50] if '/' in url_stripped else url_stripped[:50]
+
     # Use Playwright for sites with strict TLS fingerprinting
     if _needs_playwright(url):
         response = _fetch_with_playwright(url)
@@ -131,14 +135,14 @@ def fetch_url(url, session=None):
         r = session.get(url, timeout=60)
 
         if not r.ok:
-            print(f"HTTP {r.status_code}")
+            print(f"      {short_url}... HTTP {r.status_code}")
             return None
 
         response = r.text
         cache_manager.cache_response(url, response)
-        print("OK")
+        print(f"      {short_url}... OK")
 
         return response
     except Exception as e:
-        print(f"error: {e}")
+        print(f"      {short_url}... error: {e}")
         return None
