@@ -225,21 +225,21 @@ class RomDatabaseService {
 
     // Build the query based on filters
     if (query != null && query.isNotEmpty) {
-      // Use FTS5 for text search
+      // Use FTS4 for text search
       final searchTerm = _escapeSearchTerm(query);
 
-      // Count total matching entries
+      // Count total matching entries (using FTS4 docid)
       var countSql = '''
         SELECT COUNT(DISTINCT e.slug) as count
         FROM entries e
-        JOIN entries_fts fts ON fts.rowid = e.rowid
+        JOIN entries_fts fts ON fts.docid = e.rowid
       ''';
 
       var searchSql = '''
         SELECT DISTINCT e.slug, e.rom_id, e.title, e.platform, e.boxart_url,
                GROUP_CONCAT(DISTINCT r.name) as region_names
         FROM entries e
-        JOIN entries_fts fts ON fts.rowid = e.rowid
+        JOIN entries_fts fts ON fts.docid = e.rowid
         LEFT JOIN regions_entries re ON re.entry = e.slug
         LEFT JOIN regions r ON r.id = re.region
       ''';
@@ -265,11 +265,11 @@ class RomDatabaseService {
       final totalResults = countResult.first['count'] as int;
       final totalPages = (totalResults / maxResults).ceil();
 
-      // Get paginated results
+      // Get paginated results (FTS4 doesn't have bm25, order by title)
       searchSql += '''
         $whereClause
         GROUP BY e.slug
-        ORDER BY bm25(entries_fts)
+        ORDER BY e.title
         LIMIT ? OFFSET ?
       ''';
       params.addAll([maxResults, offset]);
@@ -421,9 +421,9 @@ class RomDatabaseService {
     return getEntry(slug);
   }
 
-  /// Helper to escape search terms for FTS5
+  /// Helper to escape search terms for FTS4
   String _escapeSearchTerm(String term) {
-    // Escape special FTS5 characters and create a prefix search
+    // Escape special FTS characters and create a prefix search
     final escaped =
         term.replaceAll('"', '""').replaceAll("'", "''").toLowerCase();
     return '"$escaped"*';

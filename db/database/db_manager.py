@@ -83,7 +83,6 @@ def init_database():
     con = sqlite3.connect(DB_TEMP_NAME)
     cur = con.cursor()
 
-    # Enable FTS5
     cur.execute('PRAGMA foreign_keys = ON;')
 
     cur.execute('''
@@ -107,11 +106,10 @@ def init_database():
     ''')
 
     cur.execute('''
-        CREATE VIRTUAL TABLE entries_fts USING fts5(
+        CREATE VIRTUAL TABLE entries_fts USING fts4(
             search_key,
             content='entries',
-            content_rowid='rowid',
-            tokenize='trigram'
+            tokenize=unicode61
         )
     ''')
 
@@ -221,9 +219,9 @@ def insert_entry(entry: dict):
             entry.get('boxart_url')
         ))
 
-        # Insert into the FTS5 table
+        # Insert into the FTS4 table
         cur.execute('''
-            INSERT INTO entries_fts (rowid, search_key)
+            INSERT INTO entries_fts (docid, search_key)
             VALUES (last_insert_rowid(), ?)
         ''', (entry['search_key'],))
 
