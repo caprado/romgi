@@ -127,12 +127,18 @@ def fetch_url(url, session=None):
     if not session:
         session = create_scraper_session(BROWSER_HEADERS)
 
-    r = session.get(url, timeout=None)
+    try:
+        r = session.get(url, timeout=60)
 
-    if not r.ok:
+        if not r.ok:
+            print(f"HTTP {r.status_code}")
+            return None
+
+        response = r.text
+        cache_manager.cache_response(url, response)
+        print("OK")
+
+        return response
+    except Exception as e:
+        print(f"error: {e}")
         return None
-
-    response = r.text
-    cache_manager.cache_response(url, response)
-
-    return response

@@ -259,6 +259,7 @@ class _DatabaseSetupScreenState extends ConsumerState<DatabaseSetupScreen> {
       case DatabaseSetupStatus.downloading:
         final progressPercent = (state.progress * 100).toInt();
         return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 24),
             Text(
@@ -291,6 +292,7 @@ class _DatabaseSetupScreenState extends ConsumerState<DatabaseSetupScreen> {
 
       case DatabaseSetupStatus.error:
         return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.error_outline,
