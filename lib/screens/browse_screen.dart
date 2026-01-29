@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -345,7 +346,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                     vertical: 8,
                   ),
                   child: Text(
-                    '${searchState.result!.totalResults} results',
+                    searchState.result!.hasMore
+                        ? '${searchState.result!.currentResults}+ results'
+                        : '${searchState.result!.totalResults} results',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -586,27 +589,35 @@ class _RecentlyViewedTile extends StatelessWidget {
       child: ListTile(
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(4),
-          child: item.boxartUrl != null
-              ? Image.network(
-                  item.boxartUrl!,
-                  width: 48,
-                  height: 48,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 48,
-                    height: 48,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: item.boxartUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: item.boxartUrl!,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 96,
+                    memCacheHeight: 96,
+                    fadeInDuration: const Duration(milliseconds: 150),
+                    fadeOutDuration: Duration.zero,
+                    placeholder: (context, url) => Container(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: const Icon(
+                        Icons.videogame_asset,
+                        size: 24,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: const Icon(Icons.videogame_asset, size: 24),
+                    ),
+                  )
+                : Container(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Icon(Icons.videogame_asset, size: 24),
                   ),
-                )
-              : Container(
-                  width: 48,
-                  height: 48,
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.videogame_asset, size: 24),
-                ),
+          ),
         ),
         title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(

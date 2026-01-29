@@ -49,9 +49,7 @@ class _InternetArchiveLoginScreenState
               await _extractAndSaveCookies();
             }
           },
-          onWebResourceError: (error) {
-            debugPrint('WebView error: ${error.description}');
-          },
+          onWebResourceError: (_) {},
         ),
       )
       ..loadRequest(Uri.parse(_loginUrl));
@@ -100,8 +98,8 @@ class _InternetArchiveLoginScreenState
           Navigator.of(context).pop(true); // Return success
         }
       }
-    } catch (error) {
-      debugPrint('Error extracting cookies: $error');
+    } catch (_) {
+      // Ignore cookie extraction errors
     }
   }
 

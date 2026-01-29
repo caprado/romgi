@@ -293,12 +293,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 );
               },
               onRemove: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 await ref
                     .read(favoritesProvider.notifier)
                     .removeFavorite(item.slug);
                 if (mounted) {
-                  // TODO: Fix this so its no longer an issue reported in flutter analyze
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(content: Text('Removed from wishlist')),
                   );
                 }
@@ -564,38 +564,36 @@ class _LibraryItemTile extends StatelessWidget {
       ),
       subtitle: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              PlatformNames.getDisplayName(item.platform),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.onPrimaryContainer,
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                PlatformNames.getDisplayName(item.platform),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            item.link.format.toUpperCase(),
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           Text(
             item.link.sizeStr,
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
           ),
           if (!fileExists) ...[
-            const SizedBox(width: 8),
-            Icon(Icons.warning, size: 14, color: Colors.orange[700]),
             const SizedBox(width: 4),
+            Icon(Icons.warning, size: 12, color: Colors.orange[700]),
+            const SizedBox(width: 2),
             Text(
               'Missing',
-              style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+              style: TextStyle(fontSize: 10, color: Colors.orange[700]),
             ),
           ],
         ],

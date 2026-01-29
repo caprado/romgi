@@ -9,7 +9,6 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/models.dart';
 
-/// Version metadata for the remote database
 class DatabaseVersion {
   final String version;
   final DateTime generatedAt;
@@ -75,26 +74,29 @@ class RomDatabaseService {
     return p.join(appDir.path, _versionFileName);
   }
 
-  /// Check if the database is ready to use
-  /// This verifies the file exists AND the database is usable
   Future<bool> isDatabaseReady() async {
     final dbPath = await _dbPath;
-    if (!File(dbPath).existsSync()) return false;
 
-    // Verify the database is actually usable (catches FTS5/FTS4 issues)
+    if (!File(dbPath).existsSync()) {
+      return false;
+    }
+
+    // Verify the database is actually usable
     try {
       final db = await database;
-      // Try a simple query that uses FTS to verify it works
-      await db.rawQuery('SELECT COUNT(*) FROM entries LIMIT 1');
+      await db.rawQuery('''
+        SELECT COUNT(*) FROM entries e
+        JOIN entries_fts fts ON fts.docid = e.rowid
+        LIMIT 1
+      ''');
       return true;
-    } catch (e) {
+    } catch (_) {
       // Database exists but is corrupted or incompatible - delete it
       await deleteDatabase();
       return false;
     }
   }
 
-  /// Delete the local database (for re-download or reset)
   Future<void> deleteDatabase() async {
     await _closeDatabase();
     final dbPath = await _dbPath;
@@ -111,7 +113,6 @@ class RomDatabaseService {
     }
   }
 
-  /// Get the local database version, if available
   Future<DatabaseVersion?> getLocalVersion() async {
     try {
       final versionPath = await _localVersionPath;
@@ -119,13 +120,18 @@ class RomDatabaseService {
       if (!file.existsSync()) return null;
 
       final content = await file.readAsString();
-      return DatabaseVersion.fromJson(json.decode(content));
-    } catch (e) {
+
+      var decoded = json.decode(content);
+      if (decoded is String) {
+        decoded = json.decode(decoded);
+      }
+
+      return DatabaseVersion.fromJson(decoded as Map<String, dynamic>);
+    } catch (_) {
       return null;
     }
   }
 
-  /// Check for updates by comparing local and remote versions
   Future<DatabaseVersion?> checkForUpdate() async {
     try {
       final response = await _dio.get('$_baseUrl/$_versionFileName');
@@ -143,7 +149,6 @@ class RomDatabaseService {
     }
   }
 
-  /// Download and install the database
   Future<void> downloadDatabase({
     required void Function(double progress) onProgress,
     CancelToken? cancelToken,
@@ -153,7 +158,6 @@ class RomDatabaseService {
     final tempGzPath = '$dbPath.gz';
 
     try {
-      // Download the compressed database
       await _dio.download(
         '$_baseUrl/$_dbFileName.gz',
         tempGzPath,
@@ -165,26 +169,23 @@ class RomDatabaseService {
         cancelToken: cancelToken,
       );
 
-      // Decompress the database
       final gzFile = File(tempGzPath);
       final gzBytes = await gzFile.readAsBytes();
       final decompressed = GZipDecoder().decodeBytes(gzBytes);
 
-      // Write the decompressed database
       final dbFile = File(dbPath);
       await dbFile.writeAsBytes(decompressed);
 
-      // Download and save the version file
       final versionResponse =
           await _dio.get('$_baseUrl/$_versionFileName');
-      await File(versionPath).writeAsString(json.encode(versionResponse.data));
+      final versionData = versionResponse.data;
+      final versionString = versionData is String ? versionData : json.encode(versionData);
+      await File(versionPath).writeAsString(versionString);
 
-      // Clean up temp file
       await gzFile.delete();
 
-      // Reset database connection
       await _closeDatabase();
-    } catch (e) {
+    } catch (_) {
       // Clean up on failure
       final tempFile = File(tempGzPath);
       if (tempFile.existsSync()) {
@@ -194,7 +195,6 @@ class RomDatabaseService {
     }
   }
 
-  /// Get or open the database connection
   Future<Database> get database async {
     if (_database != null && _database!.isOpen) {
       return _database!;
@@ -212,7 +212,6 @@ class RomDatabaseService {
     }
   }
 
-  /// Get all platforms
   Future<List<Platform>> getPlatforms() async {
     final db = await database;
     final results = await db.query('platforms', orderBy: 'brand, name');
@@ -226,7 +225,6 @@ class RomDatabaseService {
     }).toList();
   }
 
-  /// Get all regions
   Future<List<Region>> getRegions() async {
     final db = await database;
     final results = await db.query('regions');
@@ -239,7 +237,6 @@ class RomDatabaseService {
     }).toList();
   }
 
-  /// Search for ROM entries
   Future<SearchResult> search({
     String? query,
     List<String>? platforms,
@@ -251,72 +248,66 @@ class RomDatabaseService {
     final offset = (page - 1) * maxResults;
     final params = <dynamic>[];
     var whereClause = '';
-    var joinClause = '';
 
-    // Build the query based on filters
     if (query != null && query.isNotEmpty) {
-      // Use FTS4 for text search
-      final searchTerm = _escapeSearchTerm(query);
-
-      // Count total matching entries (using FTS4 docid)
-      var countSql = '''
-        SELECT COUNT(DISTINCT e.slug) as count
-        FROM entries e
-        JOIN entries_fts fts ON fts.docid = e.rowid
-      ''';
-
       var searchSql = '''
         SELECT DISTINCT e.slug, e.rom_id, e.title, e.platform, e.boxart_url,
                GROUP_CONCAT(DISTINCT r.name) as region_names
         FROM entries e
-        JOIN entries_fts fts ON fts.docid = e.rowid
         LEFT JOIN regions_entries re ON re.entry = e.slug
         LEFT JOIN regions r ON r.id = re.region
       ''';
 
-      whereClause = "WHERE entries_fts MATCH '$searchTerm'";
+      final words = query.toLowerCase().split(RegExp(r'\s+'));
+      final likeConditions = <String>[];
+      for (final word in words) {
+        final cleaned = word.replaceAll(RegExp(r'[^\w\d]'), '');
+        if (cleaned.isEmpty) continue;
+        likeConditions.add("LOWER(e.title) LIKE '%$cleaned%'");
+      }
+
+      final allConditions = [...likeConditions];
 
       if (platforms != null && platforms.isNotEmpty) {
         final placeholders = platforms.map((_) => '?').join(',');
-        whereClause += ' AND e.platform IN ($placeholders)';
+        allConditions.add('e.platform IN ($placeholders)');
         params.addAll(platforms);
       }
 
       if (regions != null && regions.isNotEmpty) {
         final placeholders = regions.map((_) => '?').join(',');
-        whereClause += ' AND re.region IN ($placeholders)';
+        allConditions.add('re.region IN ($placeholders)');
         params.addAll(regions);
       }
 
-      // Get total count
-      final countParams = List<dynamic>.from(params);
-      final countResult =
-          await db.rawQuery('$countSql $whereClause', countParams);
-      final totalResults = countResult.first['count'] as int;
-      final totalPages = (totalResults / maxResults).ceil();
+      if (allConditions.isNotEmpty) {
+        whereClause = 'WHERE ${allConditions.join(' AND ')}';
+      }
 
-      // Get paginated results (FTS4 doesn't have bm25, order by title)
       searchSql += '''
         $whereClause
         GROUP BY e.slug
         ORDER BY e.title
         LIMIT ? OFFSET ?
       ''';
-      params.addAll([maxResults, offset]);
+      params.addAll([maxResults + 1, offset]);
 
       final results = await db.rawQuery(searchSql, params);
-      final entries = await _mapResultsToEntries(db, results);
+      final hasMore = results.length > maxResults;
+      final limitedResults = hasMore ? results.sublist(0, maxResults) : results;
+      final entries = await _mapResultsToEntries(db, limitedResults);
+
+      final estimatedTotal = hasMore ? offset + maxResults + 1 : offset + entries.length;
+      final estimatedPages = (estimatedTotal / maxResults).ceil();
 
       return SearchResult(
         entries: entries,
-        totalResults: totalResults,
+        totalResults: estimatedTotal,
         currentPage: page,
-        totalPages: totalPages > 0 ? totalPages : 1,
+        totalPages: estimatedPages > 0 ? estimatedPages : 1,
         currentResults: entries.length,
       );
     } else {
-      // No text search, just filter by platform/region
-      var countSql = 'SELECT COUNT(DISTINCT e.slug) as count FROM entries e';
       var searchSql = '''
         SELECT DISTINCT e.slug, e.rom_id, e.title, e.platform, e.boxart_url,
                GROUP_CONCAT(DISTINCT r.name) as region_names
@@ -334,7 +325,6 @@ class RomDatabaseService {
       }
 
       if (regions != null && regions.isNotEmpty) {
-        joinClause = 'JOIN regions_entries re ON re.entry = e.slug';
         final placeholders = regions.map((_) => '?').join(',');
         conditions.add('re.region IN ($placeholders)');
         params.addAll(regions);
@@ -344,40 +334,35 @@ class RomDatabaseService {
         whereClause = 'WHERE ${conditions.join(' AND ')}';
       }
 
-      // Get total count
-      final countParams = List<dynamic>.from(params);
-      final countResult =
-          await db.rawQuery('$countSql $joinClause $whereClause', countParams);
-      final totalResults = countResult.first['count'] as int;
-      final totalPages = (totalResults / maxResults).ceil();
-
-      // Get paginated results
       searchSql += '''
         $whereClause
         GROUP BY e.slug
         ORDER BY e.title
         LIMIT ? OFFSET ?
       ''';
-      params.addAll([maxResults, offset]);
+      params.addAll([maxResults + 1, offset]);
 
       final results = await db.rawQuery(searchSql, params);
-      final entries = await _mapResultsToEntries(db, results);
+      final hasMore = results.length > maxResults;
+      final limitedResults = hasMore ? results.sublist(0, maxResults) : results;
+      final entries = await _mapResultsToEntries(db, limitedResults);
+
+      final estimatedTotal = hasMore ? offset + maxResults + 1 : offset + entries.length;
+      final estimatedPages = (estimatedTotal / maxResults).ceil();
 
       return SearchResult(
         entries: entries,
-        totalResults: totalResults,
+        totalResults: estimatedTotal,
         currentPage: page,
-        totalPages: totalPages > 0 ? totalPages : 1,
+        totalPages: estimatedPages > 0 ? estimatedPages : 1,
         currentResults: entries.length,
       );
     }
   }
 
-  /// Get a specific entry by slug
   Future<RomEntry?> getEntry(String slug) async {
     final db = await database;
 
-    // Get the entry
     final entryResults = await db.query(
       'entries',
       where: 'slug = ?',
@@ -388,7 +373,6 @@ class RomDatabaseService {
 
     final entry = entryResults.first;
 
-    // Get regions
     final regionResults = await db.rawQuery('''
       SELECT r.name FROM regions r
       JOIN regions_entries re ON re.region = r.id
@@ -397,7 +381,6 @@ class RomDatabaseService {
 
     final regions = regionResults.map((r) => r['name'] as String).toList();
 
-    // Get links
     final linkResults = await db.query(
       'links',
       where: 'entry = ?',
@@ -429,7 +412,6 @@ class RomDatabaseService {
     );
   }
 
-  /// Get a random entry, optionally filtered by platform
   Future<RomEntry?> getRandomEntry({String? platformId}) async {
     final db = await database;
 
@@ -451,15 +433,6 @@ class RomDatabaseService {
     return getEntry(slug);
   }
 
-  /// Helper to escape search terms for FTS4
-  String _escapeSearchTerm(String term) {
-    // Escape special FTS characters and create a prefix search
-    final escaped =
-        term.replaceAll('"', '""').replaceAll("'", "''").toLowerCase();
-    return '"$escaped"*';
-  }
-
-  /// Helper to map database results to RomEntry list
   Future<List<RomEntry>> _mapResultsToEntries(
     Database db,
     List<Map<String, Object?>> results,
@@ -484,7 +457,6 @@ class RomDatabaseService {
     return entries;
   }
 
-  /// Close the database connection
   Future<void> close() async {
     await _closeDatabase();
   }

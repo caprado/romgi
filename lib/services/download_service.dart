@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:native_dio_adapter/native_dio_adapter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
@@ -20,6 +21,7 @@ class DownloadService {
   final NotificationService _notifications;
   final InternetArchiveAuthService _iaAuth;
   final Dio _dio;
+  Dio? _nativeDio;
   final _uuid = const Uuid();
 
   final _downloadController = StreamController<DownloadTask>.broadcast();
@@ -192,7 +194,6 @@ class DownloadService {
         return;
       }
 
-      // Calculate how many more downloads we can start
       final slotsAvailable = _maxConcurrentDownloads == 0
           ? pending.length
           : _maxConcurrentDownloads - activeCount;
@@ -232,9 +233,45 @@ class DownloadService {
     return url.contains('myrient.erista.me');
   }
 
+  /// Check if a DioException is retryable
+  static bool _isRetryableError(DioException e) {
+    if (e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
+      return true;
+    }
+
+    // Check for SSL errors in the error message or inner error
+    final errorString = e.error?.toString().toLowerCase() ?? '';
+    final messageString = e.message?.toLowerCase() ?? '';
+    final combined = '$errorString $messageString';
+
+    if (combined.contains('ssl') ||
+        combined.contains('handshake') ||
+        combined.contains('certificate') ||
+        combined.contains('tls') ||
+        combined.contains('connection reset') ||
+        combined.contains('connection refused') ||
+        combined.contains('err_ssl') ||
+        combined.contains('net_error')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  Dio _getNativeDio() {
+    if (_nativeDio == null) {
+      _nativeDio = Dio();
+      _nativeDio!.httpClientAdapter = NativeAdapter();
+    }
+    return _nativeDio!;
+  }
+
   Future<void> _startDownload(DownloadTask task) async {
+
     final cancelToken = CancelToken();
-    // Note: task is already in _activeTasks from _processQueue
     _activeCancelTokens[task.id] = cancelToken;
 
     // Check if this download requires Internet Archive login
@@ -276,7 +313,6 @@ class DownloadService {
       int downloadedBytes = 0;
       bool attemptResume = false;
 
-      // Check if file already exists
       final file = File(downloadPath);
       if (await file.exists()) {
         downloadedBytes = await file.length();
@@ -284,7 +320,7 @@ class DownloadService {
         attemptResume = downloadedBytes > 0;
 
         // Validate that partial file isn't larger than expected total
-        // If it is, the file is likely corrupt - delete and start fresh
+        // If it is, the file is likely corrupt
         if (attemptResume &&
             task.link.size > 0 &&
             downloadedBytes >= task.link.size) {
@@ -293,7 +329,7 @@ class DownloadService {
           attemptResume = false;
         }
       } else {
-        // File doesn't exist but task may have stored progress - reset it
+        // File doesn't exist but task may have stored progress, reset it
         if (task.downloadedBytes > 0 || task.progress > 0) {
           updatedTask = updatedTask.copyWith(progress: 0, downloadedBytes: 0);
         }
@@ -308,7 +344,6 @@ class DownloadService {
         'Connection': 'keep-alive',
       };
 
-      // Add range header for resume support
       if (attemptResume) {
         headers['Range'] = 'bytes=$downloadedBytes-';
       }
@@ -327,13 +362,16 @@ class DownloadService {
         headers['Origin'] = 'https://myrient.erista.me';
       }
 
+      final isMyrient = _isMyrientUrl(task.link.url);
+      final dio = isMyrient ? _getNativeDio() : _dio;
+
       // If resuming, verify the server actually supports range requests
       // by checking if the response is 206 Partial Content
       int resumeOffset = 0;
       if (attemptResume) {
         try {
           // Make a HEAD request to check Accept-Ranges support
-          final headResponse = await _dio.head(
+          final headResponse = await dio.head(
             task.link.url,
             options: Options(headers: Map.from(headers)..remove('Range')),
             cancelToken: cancelToken,
@@ -349,7 +387,7 @@ class DownloadService {
             await file.delete();
             downloadedBytes = 0;
           }
-        } catch (error) {
+        } catch (_) {
           // HEAD request failed - try download anyway, but don't attempt resume
           await file.delete();
           downloadedBytes = 0;
@@ -357,78 +395,97 @@ class DownloadService {
         }
       }
 
-      await _dio.download(
-        task.link.url,
-        downloadPath,
-        cancelToken: cancelToken,
-        deleteOnError: false,
-        options: Options(headers: headers),
-        onReceiveProgress: (received, total) async {
-          if (_pausedTaskIds.contains(task.id)) return;
+      // Retry logic for transient SSL/connection errors
+      const maxRetries = 3;
+      var retryCount = 0;
+      while (true) {
+        try {
+          await dio.download(
+            task.link.url,
+            downloadPath,
+            cancelToken: cancelToken,
+            deleteOnError: false,
+            options: Options(headers: headers),
+            onReceiveProgress: (received, total) async {
+              if (_pausedTaskIds.contains(task.id)) return;
 
-          // Use resumeOffset (validated) instead of downloadedBytes (from file)
-          final actualReceived = resumeOffset + received;
-          final actualTotal = total > 0 ? resumeOffset + total : task.link.size;
-          final progress = actualTotal > 0 ? actualReceived / actualTotal : 0.0;
+              final actualReceived = resumeOffset + received;
+              final actualTotal =
+                  total > 0 ? resumeOffset + total : task.link.size;
+              final progress =
+                  actualTotal > 0 ? actualReceived / actualTotal : 0.0;
 
-          // Calculate download speed using average over entire download
-          int? newBytesPerSecond;
-          final now = DateTime.now();
+              int? newBytesPerSecond;
+              final now = DateTime.now();
 
-          // Initialize tracking on first callback
-          if (_downloadStartTime[task.id] == null) {
-            _downloadStartTime[task.id] = now;
-            _downloadStartBytes[task.id] = actualReceived;
-            _lastSpeedUpdate[task.id] = now;
-            _lastBytesReceived[task.id] = actualReceived;
-          } else {
-            final lastUpdate = _lastSpeedUpdate[task.id]!;
-            final elapsed = now.difference(lastUpdate).inMilliseconds;
+              // Initialize tracking on first callback
+              if (_downloadStartTime[task.id] == null) {
+                _downloadStartTime[task.id] = now;
+                _downloadStartBytes[task.id] = actualReceived;
+                _lastSpeedUpdate[task.id] = now;
+                _lastBytesReceived[task.id] = actualReceived;
+              } else {
+                final lastUpdate = _lastSpeedUpdate[task.id]!;
+                final elapsed = now.difference(lastUpdate).inMilliseconds;
 
-            if (elapsed >= 500) {
-              // Calculate average speed over entire download for accuracy
-              final totalElapsed = now
-                  .difference(_downloadStartTime[task.id]!)
-                  .inMilliseconds;
-              final totalBytesDownloaded =
-                  actualReceived - _downloadStartBytes[task.id]!;
+                if (elapsed >= 500) {
+                  // Calculate average speed over entire download for accuracy
+                  final totalElapsed = now
+                      .difference(_downloadStartTime[task.id]!)
+                      .inMilliseconds;
+                  final totalBytesDownloaded =
+                      actualReceived - _downloadStartBytes[task.id]!;
 
-              if (totalElapsed > 0 && totalBytesDownloaded > 0) {
-                newBytesPerSecond = (totalBytesDownloaded * 1000 / totalElapsed)
-                    .round();
+                  if (totalElapsed > 0 && totalBytesDownloaded > 0) {
+                    newBytesPerSecond =
+                        (totalBytesDownloaded * 1000 / totalElapsed).round();
+                  }
+
+                  _lastSpeedUpdate[task.id] = now;
+                  _lastBytesReceived[task.id] = actualReceived;
+                }
               }
 
-              _lastSpeedUpdate[task.id] = now;
-              _lastBytesReceived[task.id] = actualReceived;
-            }
-          }
+              updatedTask = updatedTask.copyWith(
+                progress: progress,
+                downloadedBytes: actualReceived,
+                totalBytes: actualTotal,
+                bytesPerSecond: newBytesPerSecond ?? updatedTask.bytesPerSecond,
+              );
+              _activeTasks[task.id] = updatedTask;
+              _downloadController.add(updatedTask);
 
-          updatedTask = updatedTask.copyWith(
-            progress: progress,
-            downloadedBytes: actualReceived,
-            totalBytes: actualTotal,
-            bytesPerSecond: newBytesPerSecond ?? updatedTask.bytesPerSecond,
+              final lastDbUpdate = _lastDbUpdate[task.id];
+              if (lastDbUpdate == null ||
+                  now.difference(lastDbUpdate).inMilliseconds > 2000) {
+                _lastDbUpdate[task.id] = now;
+                // Use unawaited to prevent blocking the progress callback
+                _db.updateDownload(updatedTask);
+              }
+
+              // Throttle notification updates to every 500ms
+              if (_lastNotificationUpdate == null ||
+                  now.difference(_lastNotificationUpdate!).inMilliseconds >
+                      500) {
+                _lastNotificationUpdate = now;
+                _updateNotifications();
+              }
+            },
           );
-          _activeTasks[task.id] = updatedTask;
-          _downloadController.add(updatedTask);
+          break;
+        } on DioException catch (e) {
+          final isRetryable = _isRetryableError(e);
+          retryCount++;
 
-          // Throttle database updates to every 2 seconds to avoid lock contention
-          final lastDbUpdate = _lastDbUpdate[task.id];
-          if (lastDbUpdate == null ||
-              now.difference(lastDbUpdate).inMilliseconds > 2000) {
-            _lastDbUpdate[task.id] = now;
-            // Use unawaited to prevent blocking the progress callback
-            _db.updateDownload(updatedTask);
+          if (!isRetryable || retryCount >= maxRetries) {
+            rethrow; // Not retryable or max retries reached
           }
 
-          // Throttle notification updates to every 500ms
-          if (_lastNotificationUpdate == null ||
-              now.difference(_lastNotificationUpdate!).inMilliseconds > 500) {
-            _lastNotificationUpdate = now;
-            _updateNotifications();
-          }
-        },
-      );
+          // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+          final delay = Duration(seconds: 1 << (retryCount - 1));
+          await Future.delayed(delay);
+        }
+      }
 
       if (_shouldExtract(task.link.filename)) {
         updatedTask = updatedTask.copyWith(status: DownloadStatus.extracting);
@@ -447,9 +504,8 @@ class DownloadService {
             filePath: extractedPath,
             completedAt: DateTime.now(),
           );
-        } catch (error) {
+        } catch (_) {
           // Extraction failed - keep the downloaded file as-is
-          // This handles cases where the file isn't a valid archive
           updatedTask = updatedTask.copyWith(
             status: DownloadStatus.completed,
             progress: 1.0,
@@ -465,7 +521,6 @@ class DownloadService {
           completedAt: DateTime.now(),
         );
       }
-
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
       await _notifications.updateForTask(updatedTask);
@@ -529,7 +584,7 @@ class DownloadService {
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
     } on RangeError {
-      // Handle RangeError - likely caused by corrupt/invalid resume state
+      // Handle RangeError
       // Delete partial file and mark for retry
       try {
         final downloadPath = await _storage.getDownloadPath(
@@ -540,7 +595,9 @@ class DownloadService {
         if (await file.exists()) {
           await file.delete();
         }
-      } catch (error) {}
+      } catch (error) {
+        // Ignore file deletion errors
+      }
 
       updatedTask = updatedTask.copyWith(
         status: DownloadStatus.pending,
@@ -558,7 +615,7 @@ class DownloadService {
       _lastDbUpdate.remove(task.id);
       _processQueue();
       return;
-    } catch (error) {
+    } catch (error, _) {
       updatedTask = updatedTask.copyWith(
         status: DownloadStatus.failed,
         error: error.toString(),
@@ -590,7 +647,7 @@ class DownloadService {
       return;
     }
 
-    // Show progress for first active download (or aggregate)
+    // Show progress for first active download
     final activeList = _activeTasks.values.toList();
     if (activeList.length == 1) {
       await _notifications.updateForTask(activeList.first);
@@ -716,20 +773,51 @@ class DownloadService {
 
   Future<String> _extractZip(String zipPath, String platform) async {
     final platformDir = await _storage.getPlatformDirectory(platform);
+    final existingFiles = <String>{};
+    try {
+      await for (final entity in platformDir.list(recursive: true)) {
+        if (entity is File && entity.path != zipPath) {
+          existingFiles.add(entity.path);
+        }
+      }
+    } catch (_) {}
 
     extractFileToDisk(zipPath, platformDir.path);
 
-    // Find the first extracted file to return as the result path
-    String? firstFilePath;
-    await for (final entity in platformDir.list(recursive: true)) {
-      if (entity is File) {
-        firstFilePath = entity.path;
+    // Find newly extracted files
+    String? extractedFilePath;
+    try {
+      await for (final entity in platformDir.list(recursive: true)) {
+        if (entity is File &&
+            !entity.path.toLowerCase().endsWith('.zip') &&
+            !existingFiles.contains(entity.path)) {
+          extractedFilePath = entity.path;
+          break;
+        }
+      }
+    } catch (_) {}
 
-        break;
+    // If we couldn't identify the new file find by matching the zip filename
+    if (extractedFilePath == null) {
+      final zipBaseName = zipPath.split('/').last;
+      final expectedBaseName =
+          zipBaseName.replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
+
+      await for (final entity in platformDir.list(recursive: true)) {
+        if (entity is File && !entity.path.toLowerCase().endsWith('.zip')) {
+          final fileName = entity.path.split('/').last;
+          final fileNameWithoutExt = fileName.contains('.')
+              ? fileName.substring(0, fileName.lastIndexOf('.'))
+              : fileName;
+          if (fileNameWithoutExt == expectedBaseName) {
+            extractedFilePath = entity.path;
+            break;
+          }
+        }
       }
     }
 
-    return firstFilePath ?? platformDir.path;
+    return extractedFilePath ?? platformDir.path;
   }
 
   Future<List<DownloadTask>> getAllDownloads() => _db.getAllDownloads();

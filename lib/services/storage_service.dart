@@ -15,7 +15,6 @@ class StorageService {
   Future<bool> hasStoragePermission() async {
     if (!Platform.isAndroid) return true;
 
-    // Check for MANAGE_EXTERNAL_STORAGE on Android 11+
     final status = await Permission.manageExternalStorage.status;
 
     return status.isGranted;
@@ -158,17 +157,21 @@ class StorageService {
     }
   }
 
-  Future<bool> deleteFile(String path) async {
+  Future<bool> deleteFile(String filePath) async {
     try {
-      final file = File(path);
+      final file = File(filePath);
       if (await file.exists()) {
         await file.delete();
-
         return true;
       }
 
+      try {
+        await file.delete();
+        return true;
+      } catch (_) {}
+
       return false;
-    } catch (error) {
+    } catch (_) {
       return false;
     }
   }

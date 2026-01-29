@@ -28,8 +28,17 @@ class RomListTile extends StatelessWidget {
                 ? CachedNetworkImage(
                     imageUrl: entry.boxartUrl!,
                     fit: BoxFit.cover,
-                    placeholder: (context, url) => const Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    memCacheWidth: 112,
+                    memCacheHeight: 112,
+                    fadeInDuration: const Duration(milliseconds: 150),
+                    fadeOutDuration: Duration.zero,
+                    placeholder: (context, url) => Container(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: const Icon(
+                        Icons.videogame_asset,
+                        size: 32,
+                        color: Colors.grey,
+                      ),
                     ),
                     errorWidget: (context, url, error) =>
                         const Icon(Icons.videogame_asset, size: 32),

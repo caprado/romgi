@@ -1,7 +1,7 @@
 name: romgi
 description: "Android ROM browser and downloader for emulation handhelds"
 publish_to: 'none'
-version: 1.0.0
+version: 1.1.0
 
 environment:
   sdk: ^3.10.1
@@ -12,6 +12,9 @@ dependencies:
 
   # HTTP client with download progress support
   dio: ^5.4.0
+
+  # Native HTTP adapter for TLS fingerprint compatibility (Cloudflare bypass)
+  native_dio_adapter: ^1.3.0
 
   # State management
   flutter_riverpod: ^2.4.9

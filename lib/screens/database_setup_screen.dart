@@ -2,9 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/api_provider.dart';
 import '../services/rom_database_service.dart';
 
-/// State for database setup process
 enum DatabaseSetupStatus {
   checking,
   ready,
@@ -48,10 +48,12 @@ final databaseSetupProvider =
 });
 
 class DatabaseSetupNotifier extends StateNotifier<DatabaseSetupState> {
-  final RomDatabaseService _dbService = RomDatabaseService();
+  final RomDatabaseService _dbService;
   CancelToken? _cancelToken;
 
-  DatabaseSetupNotifier(Ref ref) : super(const DatabaseSetupState());
+  DatabaseSetupNotifier(Ref ref)
+      : _dbService = ref.read(romDatabaseProvider),
+        super(const DatabaseSetupState());
 
   Future<void> checkDatabase() async {
     state = const DatabaseSetupState(status: DatabaseSetupStatus.checking);

@@ -34,12 +34,18 @@ class RomGridCard extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: entry.boxartUrl!,
                           fit: BoxFit.cover,
+                          memCacheWidth: 300,
+                          memCacheHeight: 300,
+                          fadeInDuration: const Duration(milliseconds: 150),
+                          fadeOutDuration: Duration.zero,
                           placeholder: (context, url) => Container(
                             color: Theme.of(
                               context,
                             ).colorScheme.surfaceContainerHighest,
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                            child: const Icon(
+                              Icons.videogame_asset,
+                              size: 48,
+                              color: Colors.grey,
                             ),
                           ),
                           errorWidget: (context, url, error) => Container(

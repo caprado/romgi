@@ -616,13 +616,13 @@ class _InternetArchiveAccountTile extends ConsumerWidget {
 
 /// Provider to get local database version info
 final localDbVersionProvider = FutureProvider<DatabaseVersion?>((ref) async {
-  final dbService = RomDatabaseService();
+  final dbService = ref.read(romDatabaseProvider);
   return dbService.getLocalVersion();
 });
 
 /// Provider to check for database updates
 final dbUpdateAvailableProvider = FutureProvider<DatabaseVersion?>((ref) async {
-  final dbService = RomDatabaseService();
+  final dbService = ref.read(romDatabaseProvider);
   return dbService.checkForUpdate();
 });
 
@@ -764,7 +764,7 @@ class _DatabaseInfoTile extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      final dbService = RomDatabaseService();
+      final dbService = ref.read(romDatabaseProvider);
       await dbService.deleteDatabase();
       ref.invalidate(localDbVersionProvider);
       ref.invalidate(dbUpdateAvailableProvider);

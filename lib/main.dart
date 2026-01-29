@@ -8,7 +8,6 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'providers/providers.dart';
 import 'screens/screens.dart';
-import 'services/rom_database_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,8 +26,8 @@ void main() {
 }
 
 /// Provider to check if database is ready
-final databaseReadyProvider = FutureProvider<bool>((ref) async {
-  final dbService = RomDatabaseService();
+final databaseReadyProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final dbService = ref.read(romDatabaseProvider);
   return dbService.isDatabaseReady();
 });
 
@@ -123,7 +122,6 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
 
     await ref.read(updateProvider.notifier).checkForUpdate();
 
-    // Show snackbar if update is available
     final updateState = ref.read(updateProvider);
     if (updateState.status == UpdateStatus.available && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

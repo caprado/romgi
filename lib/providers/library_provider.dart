@@ -91,8 +91,15 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     // Verify which files still exist
     final verified = <String>{};
     for (final item in completed) {
-      if (item.filePath != null && await File(item.filePath!).exists()) {
-        verified.add(item.filePath!);
+      final path = item.filePath;
+      if (path != null) {
+        try {
+          if (await File(path).exists()) {
+            verified.add(path);
+          }
+        } catch (e) {
+          // Ignore errors checking file existence
+        }
       }
     }
 

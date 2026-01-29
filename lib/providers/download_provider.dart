@@ -13,7 +13,16 @@ final databaseServiceProvider = Provider<DatabaseService>((ref) {
 });
 
 final storageServiceProvider = Provider<StorageService>((ref) {
-  return StorageService();
+  final storage = StorageService();
+
+  // Watch settings and sync custom paths to storage service
+  final settings = ref.watch(settingsProvider);
+  if (!settings.isLoading) {
+    storage.setCustomDownloadPath(settings.defaultDownloadPath);
+    storage.setPlatformPaths(settings.platformPaths);
+  }
+
+  return storage;
 });
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
@@ -106,10 +115,15 @@ class DownloadState {
 
 class DownloadNotifier extends StateNotifier<DownloadState> {
   final DownloadService _service;
+  final void Function()? _onDownloadCompleted;
   StreamSubscription<DownloadTask>? _subscription;
 
-  DownloadNotifier(this._service, {int maxConcurrentDownloads = 3})
-    : super(const DownloadState()) {
+  DownloadNotifier(
+    this._service, {
+    int maxConcurrentDownloads = 3,
+    void Function()? onDownloadCompleted,
+  }) : _onDownloadCompleted = onDownloadCompleted,
+       super(const DownloadState()) {
     _service.setMaxConcurrentDownloads(maxConcurrentDownloads);
     _init();
   }
@@ -121,10 +135,7 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
   Future<void> _init() async {
     state = state.copyWith(isLoading: true);
 
-    // Initialize the download service (sets up notifications, resumes downloads)
     await _service.initialize();
-
-    // Load existing downloads
     await refresh();
 
     // Listen to download updates
@@ -134,24 +145,21 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
   }
 
   void _onDownloadUpdate(DownloadTask task) {
-    // Update the task in our state
     final activeList = List<DownloadTask>.from(state.activeDownloads);
     final completedList = List<DownloadTask>.from(state.completedDownloads);
     final failedList = List<DownloadTask>.from(state.failedDownloads);
 
-    // Find existing index in active list to preserve position
     final existingIndex = activeList.indexWhere(
       (listItem) => listItem.id == task.id,
     );
 
-    // Remove from all lists first
     activeList.removeWhere((listItem) => listItem.id == task.id);
     completedList.removeWhere((listItem) => listItem.id == task.id);
     failedList.removeWhere((listItem) => listItem.id == task.id);
 
-    // Add to appropriate list based on status
     if (task.status == DownloadStatus.completed) {
       completedList.insert(0, task);
+      _onDownloadCompleted?.call();
     } else if (task.status == DownloadStatus.failed) {
       failedList.insert(0, task);
     } else {
@@ -159,10 +167,8 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
       if (existingIndex >= 0 && existingIndex < activeList.length) {
         activeList.insert(existingIndex, task);
       } else if (existingIndex >= 0) {
-        // Was at end of list, add back to end
         activeList.add(task);
       } else {
-        // New task, add to end
         activeList.add(task);
       }
     }
@@ -185,8 +191,6 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     );
   }
 
-  /// Add a download to the queue
-  /// Returns (result, existingTask) - check result to see if it was added or duplicate
   Future<(AddDownloadResult, DownloadTask)> addDownload({
     required String slug,
     required String title,
@@ -254,6 +258,9 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
   final notifier = DownloadNotifier(
     service,
     maxConcurrentDownloads: settings.maxConcurrentDownloads,
+    onDownloadCompleted: () {
+      ref.read(libraryProvider.notifier).refresh();
+    },
   );
 
   // Listen for settings changes and update the service directly
@@ -267,7 +274,6 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
 });
 
 // Helper provider to check if a slug is downloaded
-// Uses downloadedSlugsProvider for efficient lookup and auto-refresh
 final isDownloadedProvider = Provider.family<AsyncValue<bool>, String>((
   ref,
   slug,
