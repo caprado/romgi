@@ -67,11 +67,6 @@ class SevenZipServiceImpl(
         outputDir.mkdirs()
         val archivePath = archiveFile.absolutePath
 
-        val existingFiles = outputDir.walkTopDown()
-            .filter { it.isFile && it.absolutePath != archivePath }
-            .map { it.absolutePath }
-            .toSet()
-
         // First pass: compute total uncompressed size for progress.
         var totalBytes: Long = 0
         ZipArchiveInputStream(BufferedInputStream(FileInputStream(archiveFile))).use { zis ->
@@ -153,28 +148,23 @@ class SevenZipServiceImpl(
 
         cancelledPaths.remove(archivePath)
 
-        val newFiles = extractedFiles.filter { it !in existingFiles }
+        // Prefer the files we just wrote (handles re-extraction where
+        // files already existed before extraction started).
         val result = when {
-            newFiles.size == 1 -> newFiles.first()
-            newFiles.isNotEmpty() -> {
-                newFiles.maxByOrNull { File(it).length() } ?: outputDir.absolutePath
+            extractedFiles.size == 1 -> extractedFiles.first()
+            extractedFiles.isNotEmpty() -> {
+                extractedFiles.maxByOrNull { File(it).length() } ?: outputDir.absolutePath
             }
             else -> outputDir.absolutePath
         }
 
-        Log.i(TAG, "zip extraction complete: $result (${newFiles.size} new files)")
+        Log.i(TAG, "zip extraction complete: $result (${extractedFiles.size} files)")
         return result
     }
 
     private fun doExtract7z(archiveFile: File, outputDir: File): String {
         outputDir.mkdirs()
         val archivePath = archiveFile.absolutePath
-
-        // Track existing files so we can identify newly extracted ones.
-        val existingFiles = outputDir.walkTopDown()
-            .filter { it.isFile && it.absolutePath != archivePath }
-            .map { it.absolutePath }
-            .toSet()
 
         // First pass: compute total uncompressed size for progress.
         var totalBytes: Long = 0
@@ -259,18 +249,17 @@ class SevenZipServiceImpl(
 
         cancelledPaths.remove(archivePath)
 
-        // Identify the newly extracted file.
-        val newFiles = extractedFiles.filter { it !in existingFiles }
+        // Prefer the files we just wrote (handles re-extraction where
+        // files already existed before extraction started).
         val result = when {
-            newFiles.size == 1 -> newFiles.first()
-            newFiles.isNotEmpty() -> {
-                // Return the largest new file (likely the ROM).
-                newFiles.maxByOrNull { File(it).length() } ?: outputDir.absolutePath
+            extractedFiles.size == 1 -> extractedFiles.first()
+            extractedFiles.isNotEmpty() -> {
+                extractedFiles.maxByOrNull { File(it).length() } ?: outputDir.absolutePath
             }
             else -> outputDir.absolutePath
         }
 
-        Log.i(TAG, "extraction complete: $result (${newFiles.size} new files)")
+        Log.i(TAG, "extraction complete: $result (${extractedFiles.size} files)")
         return result
     }
 }

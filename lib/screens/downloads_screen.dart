@@ -205,7 +205,9 @@ class _CurrentDownloadTile extends ConsumerWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: task.fetchingMetadata ? null : task.progress,
+                value: task.fetchingMetadata || task.status == DownloadStatus.extracting
+                    ? null
+                    : task.progress,
                 minHeight: 8,
               ),
             ),
@@ -216,13 +218,16 @@ class _CurrentDownloadTile extends ConsumerWidget {
                 Text(
                   task.fetchingMetadata
                       ? 'Fetching metadata…'
-                      : task.progressText,
+                      : task.status == DownloadStatus.extracting
+                          ? 'Extracting…'
+                          : task.progressText,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (task.speedText.isNotEmpty) ...[
+                    if (task.speedText.isNotEmpty &&
+                        task.status != DownloadStatus.extracting) ...[
                       Text(
                         task.speedText,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -231,7 +236,8 @@ class _CurrentDownloadTile extends ConsumerWidget {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    if (!task.fetchingMetadata)
+                    if (!task.fetchingMetadata &&
+                        task.status != DownloadStatus.extracting)
                       Text(
                         '${(task.progress * 100).toStringAsFixed(1)}%',
                         style: Theme.of(context).textTheme.bodySmall,

@@ -791,6 +791,9 @@ class DownloadService {
     _torrentProgressSubs[task.id] = _torrents.progressStream
         .where((p) => p.infohash == infohash)
         .listen((p) async {
+      // Ignore ticks after we've started finishing this task.
+      if (!_activeTasks.containsKey(task.id)) return;
+
       // Until metadata arrives, p.files is empty. We still want the UI
       // to show "Fetching metadata", peer/seed counts, and the wire
       // download rate so the user sees the torrent is alive.
@@ -824,6 +827,7 @@ class DownloadService {
       }
 
       if (isComplete) {
+        _activeTasks.remove(task.id);
         await _finishTorrentTask(task, file);
       }
     });
@@ -857,7 +861,6 @@ class DownloadService {
 
     if (_shouldExtract(task.link.filename)) {
       final extracting = task.copyWith(status: DownloadStatus.extracting);
-      _activeTasks[task.id] = extracting;
       _downloadController.add(extracting);
       await _db.updateDownload(extracting);
 
@@ -877,7 +880,6 @@ class DownloadService {
       filePath: finalPath,
       completedAt: DateTime.now(),
     );
-    _activeTasks.remove(task.id);
     await _torrentProgressSubs.remove(task.id)?.cancel();
     await _torrentErrorSubs.remove(task.id)?.cancel();
     // Remove the torrent from libtorrent and clean up the source file
