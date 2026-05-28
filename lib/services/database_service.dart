@@ -303,12 +303,12 @@ class DatabaseService {
     );
   }
 
-  Future<DownloadTask?> findExistingDownload(String url) async {
+  Future<DownloadTask?> findExistingDownload(String slug) async {
     final db = await database;
     final maps = await db.query(
       'downloads',
-      where: 'link_url = ? AND status != ?',
-      whereArgs: [url, DownloadStatus.failed.index],
+      where: 'slug = ? AND status != ?',
+      whereArgs: [slug, DownloadStatus.failed.index],
       limit: 1,
     );
 

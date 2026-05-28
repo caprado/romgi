@@ -160,7 +160,7 @@ class DownloadService {
     String? boxartUrl,
     required DownloadLink link,
   }) async {
-    final existingDownload = await _db.findExistingDownload(link.url);
+    final existingDownload = await _db.findExistingDownload(slug);
     if (existingDownload != null) {
       return (AddDownloadResult.duplicate, existingDownload);
     }
