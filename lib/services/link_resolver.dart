@@ -13,10 +13,14 @@ class LinkResolverPrefs {
   /// rather than just sunk in the ranking.
   final bool isIaLoggedIn;
 
+  /// When true, torrent links are dropped entirely.
+  final bool torrentsDisabled;
+
   const LinkResolverPrefs({
     this.disabledSourceIds = const {},
     this.preferredSourceIds = const {},
     this.isIaLoggedIn = false,
+    this.torrentsDisabled = false,
   });
 }
 
@@ -56,6 +60,10 @@ class LinkResolver {
       final sourceId = link.sourceId;
 
       if (sourceId != null && prefs.disabledSourceIds.contains(sourceId)) {
+        continue;
+      }
+
+      if (link.isTorrent && prefs.torrentsDisabled) {
         continue;
       }
 

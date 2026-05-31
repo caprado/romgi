@@ -102,11 +102,18 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
     }
   }
 
-  List<DownloadLink> _rankLinks(List<DownloadLink> links, bool iaLoggedIn) {
+  List<DownloadLink> _rankLinks(
+    List<DownloadLink> links, {
+    required bool iaLoggedIn,
+    required bool torrentsDisabled,
+  }) {
     final resolver = LinkResolver(sourcePriority: _knownSourcePriority);
     final ranked = resolver.rank(
       links,
-      LinkResolverPrefs(isIaLoggedIn: iaLoggedIn),
+      LinkResolverPrefs(
+        isIaLoggedIn: iaLoggedIn,
+        torrentsDisabled: torrentsDisabled,
+      ),
     );
     return ranked.map((r) => r.link).toList();
   }
@@ -326,10 +333,12 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
               else
                 ..._rankLinks(
                   entry.links,
-                  ref.watch(iaLoggedInProvider).maybeWhen(
+                  iaLoggedIn: ref.watch(iaLoggedInProvider).maybeWhen(
                         data: (loggedIn) => loggedIn,
                         orElse: () => false,
                       ),
+                  torrentsDisabled:
+                      ref.watch(settingsProvider).torrentsDisabled,
                 ).map((link) => _DownloadLinkCard(entry: entry, link: link)),
 
               const SizedBox(height: 32),
@@ -548,6 +557,37 @@ class _DownloadLinkCard extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: link.isTorrent
+                        ? Colors.orange.shade700
+                        : Colors.green.shade700,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        link.isTorrent ? Icons.hub : Icons.download,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        link.isTorrent ? 'Torrent' : 'Direct',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 if (_requiresLogin)
                   Container(
                     padding: const EdgeInsets.symmetric(

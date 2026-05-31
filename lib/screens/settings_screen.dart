@@ -70,6 +70,34 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
 
+                SwitchListTile(
+                  secondary: const Icon(Icons.block),
+                  title: const Text('Disable Torrents'),
+                  subtitle: const Text(
+                    'Only use direct downloads (hides torrent-only sources like MiNERVA)',
+                  ),
+                  value: settings.torrentsDisabled,
+                  onChanged: (value) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setTorrentsDisabled(value);
+                  },
+                ),
+
+                SwitchListTile(
+                  secondary: const Icon(Icons.unarchive),
+                  title: const Text('Disable Auto-Extract'),
+                  subtitle: const Text(
+                    'Keep downloaded archives as-is without extracting (saves storage)',
+                  ),
+                  value: settings.autoExtractDisabled,
+                  onChanged: (value) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setAutoExtractDisabled(value);
+                  },
+                ),
+
                 const Divider(height: 32),
 
                 _SectionHeader(title: 'Download Locations'),

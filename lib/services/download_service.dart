@@ -26,6 +26,7 @@ class DownloadService {
   final HostAdapterRegistry _adapters;
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
+  bool autoExtractDisabled = false;
   final Dio _dio;
   Dio? _nativeDio;
   final _uuid = const Uuid();
@@ -1148,6 +1149,7 @@ class DownloadService {
   }
 
   bool _shouldExtract(String filename) {
+    if (autoExtractDisabled) return false;
     final lower = filename.toLowerCase();
     return lower.endsWith('.zip') || lower.endsWith('.7z');
   }

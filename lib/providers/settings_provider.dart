@@ -11,6 +11,8 @@ class SettingsState {
   final List<String> defaultPlatforms;
   final List<String> defaultRegions;
   final int maxConcurrentDownloads;
+  final bool torrentsDisabled;
+  final bool autoExtractDisabled;
   final bool isLoading;
 
   const SettingsState({
@@ -20,6 +22,8 @@ class SettingsState {
     this.defaultPlatforms = const [],
     this.defaultRegions = const [],
     this.maxConcurrentDownloads = 3,
+    this.torrentsDisabled = false,
+    this.autoExtractDisabled = false,
     this.isLoading = false,
   });
 
@@ -31,6 +35,8 @@ class SettingsState {
     List<String>? defaultPlatforms,
     List<String>? defaultRegions,
     int? maxConcurrentDownloads,
+    bool? torrentsDisabled,
+    bool? autoExtractDisabled,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -43,6 +49,8 @@ class SettingsState {
       defaultRegions: defaultRegions ?? this.defaultRegions,
       maxConcurrentDownloads:
           maxConcurrentDownloads ?? this.maxConcurrentDownloads,
+      torrentsDisabled: torrentsDisabled ?? this.torrentsDisabled,
+      autoExtractDisabled: autoExtractDisabled ?? this.autoExtractDisabled,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -70,6 +78,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyDefaultPlatforms = 'default_platforms';
   static const String _keyDefaultRegions = 'default_regions';
   static const String _keyMaxConcurrentDownloads = 'max_concurrent_downloads';
+  static const String _keyTorrentsDisabled = 'torrents_disabled';
+  static const String _keyAutoExtractDisabled = 'auto_extract_disabled';
 
   SettingsNotifier() : super(const SettingsState()) {
     _loadSettings();
@@ -94,6 +104,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     // Load concurrent downloads setting
     final maxConcurrentDownloads =
         prefs.getInt(_keyMaxConcurrentDownloads) ?? 3;
+    final torrentsDisabled = prefs.getBool(_keyTorrentsDisabled) ?? false;
+    final autoExtractDisabled =
+        prefs.getBool(_keyAutoExtractDisabled) ?? false;
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
@@ -116,6 +129,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       defaultPlatforms: defaultPlatforms,
       defaultRegions: defaultRegions,
       maxConcurrentDownloads: maxConcurrentDownloads,
+      torrentsDisabled: torrentsDisabled,
+      autoExtractDisabled: autoExtractDisabled,
       isLoading: false,
     );
   }
@@ -167,6 +182,18 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(defaultRegions: regions);
   }
 
+  Future<void> setAutoExtractDisabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAutoExtractDisabled, value);
+    state = state.copyWith(autoExtractDisabled: value);
+  }
+
+  Future<void> setTorrentsDisabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyTorrentsDisabled, value);
+    state = state.copyWith(torrentsDisabled: value);
+  }
+
   Future<void> setMaxConcurrentDownloads(int value) async {
     final clamped = value.clamp(0, 10);
     final prefs = await SharedPreferences.getInstance();
@@ -181,6 +208,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDefaultPlatforms);
     await prefs.remove(_keyDefaultRegions);
     await prefs.remove(_keyMaxConcurrentDownloads);
+    await prefs.remove(_keyTorrentsDisabled);
+    await prefs.remove(_keyAutoExtractDisabled);
 
     final keys = prefs.getKeys().where(
       (key) => key.startsWith(_keyPlatformPaths),
