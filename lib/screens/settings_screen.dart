@@ -74,7 +74,7 @@ class SettingsScreen extends ConsumerWidget {
                   secondary: const Icon(Icons.block),
                   title: const Text('Disable Torrents'),
                   subtitle: const Text(
-                    'Only use direct downloads (hides torrent-only sources like MiNERVA)',
+                    'Only use direct downloads (hides torrent-only sources)',
                   ),
                   value: settings.torrentsDisabled,
                   onChanged: (value) {
@@ -88,7 +88,7 @@ class SettingsScreen extends ConsumerWidget {
                   secondary: const Icon(Icons.unarchive),
                   title: const Text('Disable Auto-Extract'),
                   subtitle: const Text(
-                    'Keep downloaded archives as-is without extracting (saves storage)',
+                    'Keep downloaded archives as-is without extracting',
                   ),
                   value: settings.autoExtractDisabled,
                   onChanged: (value) {

@@ -264,11 +264,18 @@ class TorrentServiceImpl(
         }
     }
 
+    @Synchronized
     private fun emitProgressSnapshot() {
         val sm = session ?: return
         for (ih in knownInfohashes.toList()) {
             val handle = sm.find(Sha1Hash.parseHex(ih)) ?: continue
-            val progress = buildProgress(handle)
+            val progress = try {
+                buildProgress(handle)
+            } catch (e: Exception) {
+                Log.w(TAG, "buildProgress failed for $ih, removing: ${e.message}")
+                knownInfohashes -= ih
+                continue
+            }
             // Periodic heartbeat so we can see in logcat that polling is
             // alive and what state libtorrent is in for each torrent.
             Log.d(
