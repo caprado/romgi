@@ -19,6 +19,25 @@ final entryProvider = FutureProvider.family<RomEntry?, String>((
   return db.getEntry(slug);
 });
 
+/// The group an entry belongs to (e.g. its multi-disc set), or null.
+final entryGroupProvider = FutureProvider.family<EntryGroup?, String>((
+  ref,
+  slug,
+) async {
+  final db = ref.watch(romDatabaseProvider);
+
+  return db.getEntryGroup(slug);
+});
+
+// Mirror of source.yml priority values. Replaced when the SourcesService
+// surfaces the live manifest table.
+const Map<String, int> kKnownSourcePriority = {
+  'minerva': 200,
+  'nopaystation': 80,
+  'mariocube': 70,
+  'internet_archive': 50,
+};
+
 class EntryDetailScreen extends ConsumerWidget {
   final String slug;
 
@@ -107,7 +126,7 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
     required bool iaLoggedIn,
     required bool torrentsDisabled,
   }) {
-    final resolver = LinkResolver(sourcePriority: _knownSourcePriority);
+    final resolver = LinkResolver(sourcePriority: kKnownSourcePriority);
     final ranked = resolver.rank(
       links,
       LinkResolverPrefs(
@@ -117,15 +136,6 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
     );
     return ranked.map((r) => r.link).toList();
   }
-
-  // Mirror of source.yml priority values. Replaced when the SourcesService
-  // surfaces the live manifest table.
-  static const Map<String, int> _knownSourcePriority = {
-    'minerva': 200,
-    'nopaystation': 80,
-    'mariocube': 70,
-    'internet_archive': 50,
-  };
 
   @override
   Widget build(BuildContext context) {
@@ -302,6 +312,15 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
               ),
               const SizedBox(height: 16),
 
+              // Multi-disc set: offer to grab every disc + build an .m3u.
+              ref.watch(entryGroupProvider(entry.slug)).maybeWhen(
+                    data: (group) =>
+                        (group != null && group.isDisc && group.members.length > 1)
+                            ? _DiscGroupSection(entry: entry, group: group)
+                            : const SizedBox.shrink(),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
+
               // Download links header
               Row(
                 children: [
@@ -402,6 +421,127 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DiscGroupSection extends ConsumerWidget {
+  final RomEntry entry;
+  final EntryGroup group;
+
+  const _DiscGroupSection({required this.entry, required this.group});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.album, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  '${group.members.length}-disc game',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Download every disc and generate an .m3u playlist so your '
+              'emulator can swap discs.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: group.members.map((member) {
+                final isCurrent = member.slug == entry.slug;
+                final label = member.label.isEmpty
+                    ? 'Disc ${member.index}'
+                    : member.label;
+
+                return ActionChip(
+                  avatar: isCurrent
+                      ? const Icon(Icons.play_arrow, size: 16)
+                      : null,
+                  label: Text(label),
+                  onPressed: isCurrent
+                      ? null
+                      : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  EntryDetailScreen(slug: member.slug),
+                            ),
+                          ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.download),
+                label: Text('Download all ${group.members.length} discs'),
+                onPressed: () => _downloadAll(context, ref),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadAll(BuildContext context, WidgetRef ref) async {
+    final iaLoggedIn = await ref.read(iaLoggedInProvider.future);
+    if (!context.mounted) return;
+    final torrentsDisabled = ref.read(settingsProvider).torrentsDisabled;
+
+    final result = await ref.read(downloadProvider.notifier).addDiscGroup(
+          group,
+          prefs: LinkResolverPrefs(
+            isIaLoggedIn: iaLoggedIn,
+            torrentsDisabled: torrentsDisabled,
+          ),
+          sourcePriority: kKnownSourcePriority,
+        );
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    final parts = <String>[];
+    if (result.added > 0) parts.add('${result.added} queued');
+    if (result.duplicates > 0) parts.add('${result.duplicates} already added');
+    if (result.skipped > 0) parts.add('${result.skipped} unavailable');
+    final message = parts.isEmpty
+        ? 'No discs available to download'
+        : 'Discs: ${parts.join(', ')}';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 5),
+        action: result.added > 0
+            ? SnackBarAction(
+                label: 'View',
+                onPressed: () {
+                  ref.read(navigationTabProvider.notifier).state =
+                      NavTab.downloads;
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
+              )
+            : null,
+      ),
     );
   }
 }

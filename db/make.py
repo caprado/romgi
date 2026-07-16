@@ -19,6 +19,7 @@ from core import (
     load_registry,
 )
 from database import db_manager
+from grouping import EntryRef, build_groups, load_strategies
 from parsers import gametdb, libretro, mame, no_intro, retroachievements, wii_rom_set_by_ghostware
 
 
@@ -147,6 +148,21 @@ def process_platforms(
     return source_stats
 
 
+def build_entry_groups() -> None:
+    """Run every grouping strategy over the inserted entries and persist
+    the resulting groups. Runs after all sources are scraped so it sees the
+    full catalog; strategies are discovered as plugins under db/grouping/."""
+    strategies = load_strategies()
+    if not strategies:
+        return
+    entries = [EntryRef(*row) for row in db_manager.fetch_entries_for_grouping()]
+    groups = build_groups(entries, strategies)
+    db_manager.store_entry_groups(groups)
+    grouped = sum(len(g.members) for g in groups)
+    print(f"\nGrouping: {len(groups)} groups covering {grouped} entries "
+          f"({', '.join(s.kind for s in strategies)}).")
+
+
 def make(
     use_cached: bool = False,
     platforms_file: str | Path = 'platforms.yml',
@@ -167,6 +183,8 @@ def make(
 
     ctx = BuildContext(use_cached=use_cached)
     source_stats = process_platforms(platforms, registry, ctx, source_filter)
+
+    build_entry_groups()
 
     for source_id in registry.ids():
         stats = source_stats.get(source_id)

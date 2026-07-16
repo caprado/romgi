@@ -1,7 +1,7 @@
 {
   "version": "20260712",
   "generated_at": "2026-07-12T00:59:46Z",
-  "schema_version": 3,
+  "schema_version": 4,
   "min_app_version": "1.2.0",
   "size": 55963798,
   "uncompressed_size": 349483008,

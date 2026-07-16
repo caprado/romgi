@@ -6,7 +6,7 @@ import '../models/models.dart';
 class DatabaseService {
   static Database? _database;
   static const String _dbName = 'romgi.db';
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
 
   Future<Database> get database async {
     _database ??= await _initDatabase();
@@ -76,6 +76,22 @@ class DatabaseService {
         await db.execute('ALTER TABLE downloads ADD COLUMN $column');
       }
     }
+
+    if (oldVersion < 5) {
+      // Group-download fields. NULL for standalone downloads; populated when
+      // a task belongs to a multi-disc set so the .m3u can be written once
+      // every member completes.
+      for (final column in [
+        'group_id TEXT',
+        'group_index INTEGER',
+        'group_title TEXT',
+      ]) {
+        await db.execute('ALTER TABLE downloads ADD COLUMN $column');
+      }
+      await db.execute(
+        'CREATE INDEX idx_downloads_group ON downloads(group_id)',
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -108,7 +124,10 @@ class DatabaseService {
         error TEXT,
         created_at INTEGER NOT NULL,
         completed_at INTEGER,
-        hidden_from_history INTEGER NOT NULL DEFAULT 0
+        hidden_from_history INTEGER NOT NULL DEFAULT 0,
+        group_id TEXT,
+        group_index INTEGER,
+        group_title TEXT
       )
     ''');
 
@@ -118,6 +137,7 @@ class DatabaseService {
     await db.execute(
       'CREATE INDEX idx_downloads_platform ON downloads(platform)',
     );
+    await db.execute('CREATE INDEX idx_downloads_group ON downloads(group_id)');
 
     // Recently viewed table
     await db.execute('''
@@ -280,6 +300,18 @@ class DatabaseService {
       where: 'platform = ? AND status = ?',
       whereArgs: [platform, DownloadStatus.completed.index],
       orderBy: 'title ASC',
+    );
+
+    return maps.map((map) => DownloadTask.fromMap(map)).toList();
+  }
+
+  Future<List<DownloadTask>> getDownloadsByGroup(String groupId) async {
+    final db = await database;
+    final maps = await db.query(
+      'downloads',
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+      orderBy: 'group_index ASC',
     );
 
     return maps.map((map) => DownloadTask.fromMap(map)).toList();

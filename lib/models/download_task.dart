@@ -26,6 +26,11 @@ class DownloadTask {
   final DateTime createdAt;
   final DateTime? completedAt;
   final bool hiddenFromHistory;
+  // Set when this task is part of a group download (e.g. a multi-disc set).
+  // Drives the .m3u playlist written once every member of the group is done.
+  final String? groupId;
+  final int? groupIndex;
+  final String? groupTitle;
   // Torrent-only, in-memory only (not persisted). -1 means "unknown"
   // so the UI can distinguish a fresh torrent task from "0 peers".
   final int peers;
@@ -49,6 +54,9 @@ class DownloadTask {
     required this.createdAt,
     this.completedAt,
     this.hiddenFromHistory = false,
+    this.groupId,
+    this.groupIndex,
+    this.groupTitle,
     this.peers = -1,
     this.seeds = -1,
     this.fetchingMetadata = false,
@@ -86,6 +94,9 @@ class DownloadTask {
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
       hiddenFromHistory: hiddenFromHistory ?? this.hiddenFromHistory,
+      groupId: groupId,
+      groupIndex: groupIndex,
+      groupTitle: groupTitle,
       peers: peers ?? this.peers,
       seeds: seeds ?? this.seeds,
       fetchingMetadata: fetchingMetadata ?? this.fetchingMetadata,
@@ -122,6 +133,9 @@ class DownloadTask {
       'created_at': createdAt.millisecondsSinceEpoch,
       'completed_at': completedAt?.millisecondsSinceEpoch,
       'hidden_from_history': hiddenFromHistory ? 1 : 0,
+      'group_id': groupId,
+      'group_index': groupIndex,
+      'group_title': groupTitle,
     };
   }
 
@@ -159,6 +173,9 @@ class DownloadTask {
           ? DateTime.fromMillisecondsSinceEpoch(map['completed_at'] as int)
           : null,
       hiddenFromHistory: (map['hidden_from_history'] as int? ?? 0) == 1,
+      groupId: map['group_id'] as String?,
+      groupIndex: map['group_index'] as int?,
+      groupTitle: map['group_title'] as String?,
     );
   }
 

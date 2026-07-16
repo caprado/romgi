@@ -21,6 +21,24 @@ import 'torrent_service.dart';
 
 enum AddDownloadResult { added, duplicate }
 
+/// Outcome of enqueuing a whole disc group at once.
+class DiscGroupDownloadResult {
+  /// Newly queued discs.
+  final int added;
+
+  /// Discs already downloading/queued/downloaded (skipped as duplicates).
+  final int duplicates;
+
+  /// Discs with no usable link under the current prefs (e.g. torrents off).
+  final int skipped;
+
+  const DiscGroupDownloadResult({
+    this.added = 0,
+    this.duplicates = 0,
+    this.skipped = 0,
+  });
+}
+
 class DownloadService {
   final DatabaseService _db;
   final RomDatabaseService _romDb;
@@ -167,6 +185,9 @@ class DownloadService {
     required String platform,
     String? boxartUrl,
     required DownloadLink link,
+    String? groupId,
+    int? groupIndex,
+    String? groupTitle,
   }) async {
     final existingDownload = await _db.findExistingDownload(slug);
     if (existingDownload != null) {
@@ -182,6 +203,9 @@ class DownloadService {
       link: link,
       status: DownloadStatus.pending,
       createdAt: DateTime.now(),
+      groupId: groupId,
+      groupIndex: groupIndex,
+      groupTitle: groupTitle,
     );
 
     await _db.insertDownload(downloadTask);
@@ -190,6 +214,105 @@ class DownloadService {
     _processQueue();
 
     return (AddDownloadResult.added, downloadTask);
+  }
+
+  /// Enqueue every disc in [group], picking each disc's best link with the
+  /// same [LinkResolver] the detail screen uses. Once all members finish, a
+  /// `.m3u` playlist is written beside the discs (see [_maybeWritePlaylist]).
+  Future<DiscGroupDownloadResult> addDiscGroup(
+    EntryGroup group, {
+    required LinkResolverPrefs prefs,
+    Map<String, int> sourcePriority = const {},
+  }) async {
+    final resolver = LinkResolver(sourcePriority: sourcePriority);
+    var added = 0;
+    var duplicates = 0;
+    var skipped = 0;
+
+    for (final member in group.members) {
+      final entry = await _romDb.getEntry(member.slug);
+      if (entry == null) {
+        skipped++;
+        continue;
+      }
+
+      final ranked = resolver.rank(entry.links, prefs);
+      if (ranked.isEmpty) {
+        skipped++;
+        continue;
+      }
+
+      final (result, _) = await addDownload(
+        slug: entry.slug,
+        title: entry.title,
+        platform: entry.platform,
+        boxartUrl: entry.boxartUrl,
+        link: ranked.first.link,
+        groupId: group.id,
+        groupIndex: member.index,
+        groupTitle: group.title,
+      );
+
+      if (result == AddDownloadResult.duplicate) {
+        duplicates++;
+      } else {
+        added++;
+      }
+    }
+
+    return DiscGroupDownloadResult(
+      added: added,
+      duplicates: duplicates,
+      skipped: skipped,
+    );
+  }
+
+  /// After a grouped task completes, write the group's `.m3u` once every
+  /// member has finished. Safe to call for non-grouped tasks (no-op) and
+  /// idempotent if two members finish near-simultaneously.
+  Future<void> _maybeWritePlaylist(DownloadTask task) async {
+    final groupId = task.groupId;
+    if (groupId == null) return;
+
+    final members = await _db.getDownloadsByGroup(groupId);
+    if (members.length < 2) return;
+    if (members.any((m) => m.status != DownloadStatus.completed)) return;
+
+    try {
+      await _writePlaylist(task.platform, task.groupTitle, members);
+    } catch (_) {
+      // A missing playlist is non-fatal — the discs are already on disk.
+    }
+  }
+
+  Future<void> _writePlaylist(
+    String platform,
+    String? groupTitle,
+    List<DownloadTask> members,
+  ) async {
+    final ordered = [...members]
+      ..sort((a, b) => (a.groupIndex ?? 0).compareTo(b.groupIndex ?? 0));
+
+    // The .m3u sits in the platform dir beside the discs, so entries are
+    // referenced by filename and the emulator resolves them relatively.
+    final lines = <String>[];
+    for (final member in ordered) {
+      final filePath = member.filePath;
+      if (filePath != null) lines.add(p.basename(filePath));
+    }
+    if (lines.length < 2) return;
+
+    final dir = await _storage.getPlatformDirectory(platform);
+    final name = _playlistFileName(groupTitle ?? ordered.first.title);
+    await File(p.join(dir.path, name)).writeAsString('${lines.join('\n')}\n');
+  }
+
+  String _playlistFileName(String title) {
+    final safe = title
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return '${safe.isEmpty ? 'playlist' : safe}.m3u';
   }
 
   Future<void> _processQueue() async {
@@ -559,6 +682,7 @@ class DownloadService {
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
       await _notifications.updateForTask(updatedTask);
+      await _maybeWritePlaylist(updatedTask);
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel) {
         // Download was paused/cancelled
@@ -924,6 +1048,7 @@ class DownloadService {
     await _db.updateDownload(completed);
     _downloadController.add(completed);
     await _updateNotifications();
+    await _maybeWritePlaylist(completed);
     _processQueue();
   }
 
