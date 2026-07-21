@@ -11,12 +11,14 @@ import 'package:uuid/uuid.dart';
 import '../models/models.dart';
 import '../torrent/torrent_api.g.dart';
 import 'database_service.dart';
+import 'debrid_service.dart';
 import 'host_adapter.dart';
 import 'link_resolver.dart';
 import 'notification_service.dart';
 import 'rom_database_service.dart';
 import 'seven_zip_service.dart';
 import 'storage_service.dart';
+import 'torrent_magnet.dart';
 import 'torrent_service.dart';
 
 enum AddDownloadResult { added, duplicate }
@@ -29,6 +31,7 @@ class DownloadService {
   final HostAdapterRegistry _adapters;
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
+  final DebridService? _debrid;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
   final Dio _dio;
   Dio? _nativeDio;
@@ -71,6 +74,7 @@ class DownloadService {
     required HostAdapterRegistry adapters,
     required TorrentService torrents,
     required SevenZipService sevenZip,
+    DebridService? debrid,
     Dio? dio,
   })  : _db = db,
         _romDb = romDb,
@@ -79,6 +83,7 @@ class DownloadService {
         _adapters = adapters,
         _torrents = torrents,
         _sevenZip = sevenZip,
+        _debrid = debrid,
         _dio = dio ?? Dio();
 
   Future<void> initialize() async {
@@ -294,6 +299,23 @@ class DownloadService {
     final adapter = _adapters.adapterFor(task.link);
 
     if (adapter.isTorrent) {
+      final prefs = getLinkResolverPrefs();
+      if (prefs.debridEnabled && _debrid != null) {
+        final resolved = await _tryResolveViaDebrid(task);
+        if (resolved != null) {
+          // Re-enter with a plain HTTP link — adapterFor() now routes to HTTP.
+          await _startDownload(resolved);
+          return;
+        }
+        // Attempted but not resolved. If P2P is off there's nowhere to go.
+        if (prefs.torrentsDisabled) {
+          await _failTask(
+            task,
+            'Not cached on debrid and torrents are disabled',
+          );
+          return;
+        }
+      }
       await _startTorrentDownload(task, adapter);
       return;
     }
@@ -681,6 +703,54 @@ class DownloadService {
     }
   }
 
+  /// Try to turn a torrent [task] into an HTTP download via the configured
+  /// debrid provider. Shows "Resolving/Caching on debrid…" while polling.
+  /// Returns the rewritten task on success, or null to fall back to P2P.
+  Future<DownloadTask?> _tryResolveViaDebrid(DownloadTask task) async {
+    final debrid = _debrid;
+    if (debrid == null) return null;
+
+    final working = task.copyWith(
+      status: DownloadStatus.downloading,
+      resolvingDebrid: true,
+    );
+    _activeTasks[task.id] = working;
+    await _db.updateDownload(working);
+    _downloadController.add(working);
+    await _startForegroundTask(task.title);
+
+    final httpLink = await debrid.resolveTorrentLink(
+      task.link,
+      onCaching: (status) {
+        final current = _activeTasks[task.id];
+        if (current == null) return;
+        final updated = current.copyWith(
+          progress: status.progress ?? current.progress,
+          resolvingDebrid: true,
+        );
+        _activeTasks[task.id] = updated;
+        _downloadController.add(updated);
+      },
+    );
+
+    if (httpLink == null) return null;
+    return task.copyWith(
+      link: httpLink,
+      status: DownloadStatus.pending,
+      resolvingDebrid: false,
+      progress: 0,
+    );
+  }
+
+  Future<void> _failTask(DownloadTask task, String error) async {
+    final failed = task.copyWith(status: DownloadStatus.failed, error: error);
+    _activeTasks.remove(task.id);
+    _activeCancelTokens.remove(task.id);
+    await _db.updateDownload(failed);
+    _downloadController.add(failed);
+    _processQueue();
+  }
+
   Future<void> _startTorrentDownload(
     DownloadTask task,
     HostAdapter adapter,
@@ -780,7 +850,7 @@ class DownloadService {
           fileIndices: [fileIndex],
         );
       } else {
-        final magnet = _buildMagnetUri(infohash);
+        final magnet = buildMagnetUri(infohash);
         await _torrents.addTorrent(
           magnet: magnet,
           fileIndices: [fileIndex],
@@ -979,34 +1049,6 @@ class DownloadService {
     } catch (_) {
       return null;
     }
-  }
-
-  /// Public-tracker list bundled into every magnet URI we hand to
-  /// libtorrent. HTTPS trackers come first because some networks (and
-  /// most Android emulators behind NAT) block UDP outbound.
-  static const _publicTrackers = <String>[
-    'https://tracker.gbitt.info:443/announce',
-    'https://tracker.nanoha.org:443/announce',
-    'https://opentracker.i2p.rocks:443/announce',
-    'https://1337.abcvg.info:443/announce',
-    'http://tracker.openbittorrent.com:80/announce',
-    'http://tracker.opentrackr.org:1337/announce',
-    'udp://tracker.opentrackr.org:1337/announce',
-    'udp://open.demonii.com:1337/announce',
-    'udp://exodus.desync.com:6969/announce',
-    'udp://explodie.org:6969/announce',
-    'udp://opentracker.io:6969/announce',
-    'udp://tracker.torrent.eu.org:451/announce',
-    'udp://bt1.archive.org:6969/announce',
-    'udp://open.stealth.si:80/announce',
-  ];
-
-  String _buildMagnetUri(String infohash) {
-    final parts = <String>['xt=urn:btih:$infohash'];
-    for (final t in _publicTrackers) {
-      parts.add('tr=${Uri.encodeQueryComponent(t)}');
-    }
-    return 'magnet:?${parts.join('&')}';
   }
 
   /// archive.org download URL → identifier (the bit between

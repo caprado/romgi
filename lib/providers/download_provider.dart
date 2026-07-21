@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'api_provider.dart';
+import 'debrid_provider.dart';
 import 'internet_archive_auth_provider.dart';
 import 'library_provider.dart';
 import 'settings_provider.dart';
@@ -16,8 +17,6 @@ final databaseServiceProvider = Provider<DatabaseService>((ref) {
 
 final storageServiceProvider = Provider<StorageService>((ref) {
   final storage = StorageService();
-
-  // Watch settings and sync custom paths to storage service
   final settings = ref.watch(settingsProvider);
   if (!settings.isLoading) {
     storage.setCustomDownloadPath(settings.defaultDownloadPath);
@@ -50,6 +49,7 @@ final downloadServiceProvider = Provider<DownloadService>((ref) {
   final adapters = ref.watch(hostAdapterRegistryProvider);
   final torrents = ref.watch(torrentServiceProvider);
   final sevenZip = ref.watch(sevenZipServiceProvider);
+  final debrid = ref.watch(debridServiceProvider);
   return DownloadService(
     db: db,
     romDb: romDb,
@@ -58,6 +58,7 @@ final downloadServiceProvider = Provider<DownloadService>((ref) {
     adapters: adapters,
     torrents: torrents,
     sevenZip: sevenZip,
+    debrid: debrid,
   );
 });
 
@@ -157,7 +158,6 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     await _service.initialize();
     await refresh();
 
-    // Listen to download updates
     _subscription = _service.downloadStream.listen(_onDownloadUpdate);
 
     state = state.copyWith(isLoading: false, isInitialized: true);
@@ -277,6 +277,7 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
       (platform) => settings.shouldExtractForPlatform(platform);
   service.getLinkResolverPrefs = () => LinkResolverPrefs(
         torrentsDisabled: settings.torrentsDisabled,
+        debridEnabled: settings.debridEnabled,
       );
   final notifier = DownloadNotifier(
     service,
@@ -286,7 +287,6 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
     },
   );
 
-  // Listen for settings changes and update the service directly
   ref.listen<SettingsState>(settingsProvider, (previous, next) {
     if (previous?.maxConcurrentDownloads != next.maxConcurrentDownloads) {
       notifier.updateMaxConcurrentDownloads(next.maxConcurrentDownloads);
@@ -296,7 +296,6 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
   return notifier;
 });
 
-// Helper provider to check if a slug is downloaded
 final isDownloadedProvider = Provider.family<AsyncValue<bool>, String>((
   ref,
   slug,

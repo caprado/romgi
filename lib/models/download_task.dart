@@ -26,11 +26,10 @@ class DownloadTask {
   final DateTime createdAt;
   final DateTime? completedAt;
   final bool hiddenFromHistory;
-  // Torrent-only, in-memory only (not persisted). -1 means "unknown"
-  // so the UI can distinguish a fresh torrent task from "0 peers".
   final int peers;
   final int seeds;
   final bool fetchingMetadata;
+  final bool resolvingDebrid;
 
   const DownloadTask({
     required this.id,
@@ -52,6 +51,7 @@ class DownloadTask {
     this.peers = -1,
     this.seeds = -1,
     this.fetchingMetadata = false,
+    this.resolvingDebrid = false,
   });
 
   DownloadTask copyWith({
@@ -68,6 +68,7 @@ class DownloadTask {
     int? peers,
     int? seeds,
     bool? fetchingMetadata,
+    bool? resolvingDebrid,
   }) {
     return DownloadTask(
       id: id,
@@ -89,6 +90,7 @@ class DownloadTask {
       peers: peers ?? this.peers,
       seeds: seeds ?? this.seeds,
       fetchingMetadata: fetchingMetadata ?? this.fetchingMetadata,
+      resolvingDebrid: resolvingDebrid ?? this.resolvingDebrid,
     );
   }
 
@@ -167,6 +169,9 @@ class DownloadTask {
       case DownloadStatus.pending:
         return 'Waiting...';
       case DownloadStatus.downloading:
+        if (resolvingDebrid) {
+          return progress > 0 ? 'Caching on debrid...' : 'Resolving via debrid...';
+        }
         if (link.isTorrent && fetchingMetadata) return 'Finding peers...';
         if (link.isTorrent) return 'Downloading (Torrent)';
         return 'Downloading...';

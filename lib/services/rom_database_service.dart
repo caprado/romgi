@@ -21,13 +21,8 @@ class DatabaseVersion {
   final int entries;
   final int links;
   final int platforms;
-
-  /// Schema version of this DB build. Older builds omit this; absent → 1.
   final int schemaVersion;
-
-  /// Minimum app version that can read this DB. Older builds omit this.
   final String? minAppVersion;
-
   final int? sources;
 
   const DatabaseVersion({
@@ -59,17 +54,9 @@ class DatabaseVersion {
   }
 }
 
-/// Result of probing the remote DB against this app build.
 class DatabaseUpdateCheck {
-  /// New DB metadata when an update is available.
   final DatabaseVersion? available;
-
-  /// True when the local DB schema is older than this app expects.
-  /// Caller must delete + re-download before opening.
   final bool localIsStale;
-
-  /// True when the remote DB requires a newer app build. Caller should
-  /// prompt the user to update and not download.
   final bool appTooOld;
 
   const DatabaseUpdateCheck({
@@ -79,9 +66,7 @@ class DatabaseUpdateCheck {
   });
 }
 
-/// Service for managing the ROM catalog database
 class RomDatabaseService {
-  // Raw GitHub URL for database files in the repository
   static const String _baseUrl =
       'https://raw.githubusercontent.com/caprado/romgi/main/db';
 
@@ -91,6 +76,8 @@ class RomDatabaseService {
   Database? _database;
   bool _hasRaColumns = false;
   bool get hasRaColumns => _hasRaColumns;
+  bool _hasTorrentsTable = false;
+  bool get hasTorrentsTable => _hasTorrentsTable;
   final Dio _dio;
 
   RomDatabaseService({Dio? dio})
@@ -102,13 +89,11 @@ class RomDatabaseService {
               ),
             );
 
-  /// Get the path to the database file
   Future<String> get _dbPath async {
     final appDir = await getApplicationDocumentsDirectory();
     return p.join(appDir.path, _dbFileName);
   }
 
-  /// Get the path to the local version file
   Future<String> get _localVersionPath async {
     final appDir = await getApplicationDocumentsDirectory();
     return p.join(appDir.path, _versionFileName);
@@ -120,8 +105,7 @@ class RomDatabaseService {
     if (!File(dbPath).existsSync()) {
       return false;
     }
-
-    // Verify the database is actually usable
+    
     try {
       final db = await database;
       await db.rawQuery('''
@@ -300,6 +284,12 @@ class RomDatabaseService {
     _database = await openDatabase(dbPath, readOnly: true);
     final cols = await _database!.rawQuery('PRAGMA table_info(entries)');
     _hasRaColumns = cols.any((c) => c['name'] == 'ra_game_id');
+    // Feature-detect the torrents table so a pre-torrent catalog degrades to a
+    // synthesized magnet in the debrid layer instead of erroring.
+    final torrentsTable = await _database!.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='torrents'",
+    );
+    _hasTorrentsTable = torrentsTable.isNotEmpty;
     return _database!;
   }
 
@@ -529,6 +519,22 @@ class RomDatabaseService {
       regions: regions,
       links: links,
     );
+  }
+
+  /// Torrent metadata (magnet, trackers, …) for [infohash], or null when the
+  /// catalog has no torrents table or no matching row.
+  Future<TorrentMetadata?> getTorrentMetadata(String infohash) async {
+    final db = await database;
+    if (!_hasTorrentsTable) return null;
+
+    final rows = await db.query(
+      'torrents',
+      where: 'infohash = ?',
+      whereArgs: [infohash.toLowerCase()],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return TorrentMetadata.fromRow(rows.first);
   }
 
   Future<RomEntry?> getRandomEntry({String? platformId}) async {

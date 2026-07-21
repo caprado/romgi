@@ -8,9 +8,6 @@ class DownloadLink {
   final int size;
   final String sizeStr;
   final String sourceUrl;
-
-  // Optional fields — sourceId/torrent fields are absent for old DBs and
-  // for non-torrent hosts respectively.
   final String? sourceId;
   final bool requiresAuth;
   final String? torrentInfohash;
@@ -35,6 +32,38 @@ class DownloadLink {
   });
 
   bool get isTorrent => torrentInfohash != null;
+
+  DownloadLink copyWith({
+    String? name,
+    String? type,
+    String? format,
+    String? url,
+    String? filename,
+    String? host,
+    int? size,
+    String? sizeStr,
+    String? sourceUrl,
+    String? sourceId,
+    bool? requiresAuth,
+    bool clearTorrentFields = false,
+  }) {
+    return DownloadLink(
+      name: name ?? this.name,
+      type: type ?? this.type,
+      format: format ?? this.format,
+      url: url ?? this.url,
+      filename: filename ?? this.filename,
+      host: host ?? this.host,
+      size: size ?? this.size,
+      sizeStr: sizeStr ?? this.sizeStr,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+      sourceId: sourceId ?? this.sourceId,
+      requiresAuth: requiresAuth ?? this.requiresAuth,
+      torrentInfohash: clearTorrentFields ? null : torrentInfohash,
+      torrentFileIndex: clearTorrentFields ? null : torrentFileIndex,
+      torrentFilePath: clearTorrentFields ? null : torrentFilePath,
+    );
+  }
 
   factory DownloadLink.fromJson(Map<String, dynamic> json) {
     return DownloadLink(

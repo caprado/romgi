@@ -14,6 +14,8 @@ class SettingsState {
   final bool torrentsDisabled;
   final bool autoExtractDisabled;
   final Set<String> extractDisabledPlatforms;
+  final bool debridEnabled;
+  final String debridProviderId;
   final bool isLoading;
 
   const SettingsState({
@@ -26,6 +28,8 @@ class SettingsState {
     this.torrentsDisabled = false,
     this.autoExtractDisabled = false,
     this.extractDisabledPlatforms = const {},
+    this.debridEnabled = false,
+    this.debridProviderId = 'torbox',
     this.isLoading = false,
   });
 
@@ -45,6 +49,8 @@ class SettingsState {
     bool? torrentsDisabled,
     bool? autoExtractDisabled,
     Set<String>? extractDisabledPlatforms,
+    bool? debridEnabled,
+    String? debridProviderId,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -61,6 +67,8 @@ class SettingsState {
       autoExtractDisabled: autoExtractDisabled ?? this.autoExtractDisabled,
       extractDisabledPlatforms:
           extractDisabledPlatforms ?? this.extractDisabledPlatforms,
+      debridEnabled: debridEnabled ?? this.debridEnabled,
+      debridProviderId: debridProviderId ?? this.debridProviderId,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -92,6 +100,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyAutoExtractDisabled = 'auto_extract_disabled';
   static const String _keyExtractDisabledPlatforms =
       'extract_disabled_platform_';
+  static const String _keyDebridEnabled = 'debrid_enabled';
+  static const String _keyDebridProviderId = 'debrid_provider_id';
 
   SettingsNotifier() : super(const SettingsState()) {
     _loadSettings();
@@ -119,6 +129,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final torrentsDisabled = prefs.getBool(_keyTorrentsDisabled) ?? false;
     final autoExtractDisabled =
         prefs.getBool(_keyAutoExtractDisabled) ?? false;
+    final debridEnabled = prefs.getBool(_keyDebridEnabled) ?? false;
+    final debridProviderId =
+        prefs.getString(_keyDebridProviderId) ?? 'torbox';
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
@@ -144,6 +157,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       torrentsDisabled: torrentsDisabled,
       autoExtractDisabled: autoExtractDisabled,
       extractDisabledPlatforms: extractDisabledPlatforms,
+      debridEnabled: debridEnabled,
+      debridProviderId: debridProviderId,
       isLoading: false,
     );
   }
@@ -221,6 +236,18 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(torrentsDisabled: value);
   }
 
+  Future<void> setDebridEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyDebridEnabled, value);
+    state = state.copyWith(debridEnabled: value);
+  }
+
+  Future<void> setDebridProviderId(String providerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyDebridProviderId, providerId);
+    state = state.copyWith(debridProviderId: providerId);
+  }
+
   Future<void> setMaxConcurrentDownloads(int value) async {
     final clamped = value.clamp(0, 10);
     final prefs = await SharedPreferences.getInstance();
@@ -237,6 +264,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyMaxConcurrentDownloads);
     await prefs.remove(_keyTorrentsDisabled);
     await prefs.remove(_keyAutoExtractDisabled);
+    await prefs.remove(_keyDebridEnabled);
+    await prefs.remove(_keyDebridProviderId);
 
     for (final key in prefs.getKeys().toList()) {
       if (key.startsWith(_keyPlatformPaths) ||

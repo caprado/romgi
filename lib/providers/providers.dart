@@ -1,4 +1,5 @@
 export 'api_provider.dart';
+export 'debrid_provider.dart';
 export 'download_provider.dart';
 export 'favorites_provider.dart';
 export 'internet_archive_auth_provider.dart';

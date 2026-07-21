@@ -100,6 +100,11 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
+                _SectionHeader(title: 'Debrid Service'),
+                const _DebridSection(),
+
+                const Divider(height: 32),
+
                 _SectionHeader(title: 'Download Locations'),
 
                 FutureBuilder<String>(
@@ -983,5 +988,177 @@ class _DatabaseUpdateDialogState extends ConsumerState<_DatabaseUpdateDialog> {
         _error = 'Download failed: $e';
       });
     }
+  }
+}
+
+class _DebridSection extends ConsumerStatefulWidget {
+  const _DebridSection();
+
+  @override
+  ConsumerState<_DebridSection> createState() => _DebridSectionState();
+}
+
+class _DebridSectionState extends ConsumerState<_DebridSection> {
+  final _keyController = TextEditingController();
+  bool _obscure = true;
+  bool _testing = false;
+  String? _message;
+
+  @override
+  void dispose() {
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveKey() async {
+    final key = _keyController.text.trim();
+    if (key.isEmpty) return;
+    final providerId = ref.read(settingsProvider).debridProviderId;
+    await ref
+        .read(debridServiceProvider)
+        .setCredentials(providerId: providerId, apiKey: key);
+    _keyController.clear();
+    ref.invalidate(debridConfiguredProvider);
+    if (mounted) setState(() => _message = 'API key saved');
+  }
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _message = null;
+    });
+    final error = await ref.read(debridServiceProvider).testConnection();
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _message = error ?? 'Connected successfully';
+    });
+  }
+
+  Future<void> _clear() async {
+    await ref.read(debridServiceProvider).clearCredentials();
+    ref.invalidate(debridConfiguredProvider);
+    if (mounted) setState(() => _message = 'API key cleared');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final providers = ref.read(debridServiceProvider).registry.available;
+    final configured = ref.watch(debridConfiguredProvider);
+    final selected = providers.firstWhere(
+      (p) => p.id == settings.debridProviderId,
+      orElse: () => providers.first,
+    );
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.bolt),
+          title: const Text('Use debrid service'),
+          subtitle: const Text(
+            'Resolve cached torrents to fast direct links (TorBox, Real-Debrid)',
+          ),
+          value: settings.debridEnabled,
+          onChanged: (value) =>
+              ref.read(settingsProvider.notifier).setDebridEnabled(value),
+        ),
+        if (settings.debridEnabled) ...[
+          ListTile(
+            leading: const Icon(Icons.cloud_outlined),
+            title: const Text('Provider'),
+            trailing: DropdownButton<String>(
+              value: settings.debridProviderId,
+              items: providers
+                  .map((p) =>
+                      DropdownMenuItem(value: p.id, child: Text(p.name)))
+                  .toList(),
+              onChanged: (id) {
+                if (id != null) {
+                  ref.read(settingsProvider.notifier).setDebridProviderId(id);
+                }
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _keyController,
+              obscureText: _obscure,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: '${selected.name} API key',
+                helperText: selected.apiKeyHelp,
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscure ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                FilledButton(
+                    onPressed: _saveKey, child: const Text('Save key')),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _testing ? null : _test,
+                  child: _testing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Test'),
+                ),
+                const Spacer(),
+                configured.maybeWhen(
+                  data: (ok) => ok
+                      ? TextButton(
+                          onPressed: _clear, child: const Text('Clear'))
+                      : const SizedBox.shrink(),
+                  orElse: () => const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+          configured.maybeWhen(
+            data: (ok) => Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    ok ? Icons.check_circle : Icons.info_outline,
+                    size: 16,
+                    color: ok
+                        ? Colors.green
+                        : Theme.of(context).colorScheme.outline,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    ok ? 'API key saved' : 'No API key saved',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          if (_message != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                _message!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ],
+    );
   }
 }
