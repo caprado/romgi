@@ -55,6 +55,10 @@ class DownloadService {
   final Map<String, int> _downloadStartBytes = {};
   final Map<String, DateTime> _lastDbUpdate = {};
   final Map<String, Set<String>> _failedUrls = {};
+
+  // Consecutive dead debrid links re-resolved per task, bounded
+  final Map<String, int> _debridRelinkAttempts = {};
+  static const int _maxDebridRelinkAttempts = 2;
   LinkResolverPrefs Function() getLinkResolverPrefs = () => const LinkResolverPrefs();
 
   // Max concurrent downloads (0 = unlimited)
@@ -300,18 +304,29 @@ class DownloadService {
 
     if (adapter.isTorrent) {
       final prefs = getLinkResolverPrefs();
-      if (prefs.debridEnabled && _debrid != null) {
-        final resolved = await _tryResolveViaDebrid(task);
-        if (resolved != null) {
-          // Re-enter with a plain HTTP link — adapterFor() now routes to HTTP.
-          await _startDownload(resolved);
-          return;
-        }
-        // Attempted but not resolved. If P2P is off there's nowhere to go.
-        if (prefs.torrentsDisabled) {
+      final debrid = _debrid;
+      if (prefs.debridEnabled && debrid != null) {
+        if (await debrid.isConfigured()) {
+          final resolved = await _tryResolveViaDebrid(task);
+          // Task may have been cancelled/paused during the resolution poll
+          if (!_activeTasks.containsKey(task.id)) return;
+          if (resolved != null) {
+            // Re-enter with a plain HTTP link — adapterFor() now routes to HTTP.
+            await _startDownload(resolved);
+            return;
+          }
+          // Attempted but not resolved. If P2P is off there's nowhere to go.
+          if (prefs.torrentsDisabled) {
+            await _failTask(
+              task,
+              'Not cached on debrid and torrents are disabled',
+            );
+            return;
+          }
+        } else if (prefs.torrentsDisabled) {
           await _failTask(
             task,
-            'Not cached on debrid and torrents are disabled',
+            'Debrid is enabled but no API key is saved for the selected provider',
           );
           return;
         }
@@ -578,6 +593,7 @@ class DownloadService {
           completedAt: DateTime.now(),
         );
       }
+      _debridRelinkAttempts.remove(task.id);
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
       await _notifications.updateForTask(updatedTask);
@@ -627,18 +643,53 @@ class DownloadService {
           return;
         }
 
-        final isAuthError = statusCode == 401 || statusCode == 403;
-        if (isAuthError) {
-          await adapter.onAuthFailure(task.link);
-        }
+        // Expired debrid CDN link — revert to torrent form and re-resolve
+        final isDebridExpiry = task.link.debridResolved &&
+            (statusCode == 401 ||
+                statusCode == 403 ||
+                statusCode == 404 ||
+                statusCode == 410);
+        if (isDebridExpiry) {
+          final attempts = (_debridRelinkAttempts[task.id] ?? 0) + 1;
+          _debridRelinkAttempts[task.id] = attempts;
+          if (attempts <= _maxDebridRelinkAttempts) {
+            updatedTask = updatedTask.copyWith(
+              link: task.link.copyWith(debridResolved: false),
+              status: DownloadStatus.pending,
+            );
+            await _db.updateDownload(updatedTask);
+            _downloadController.add(updatedTask);
+            // Don't go to finally cleanup yet - let _processQueue restart this
+            _activeTasks.remove(task.id);
+            _activeCancelTokens.remove(task.id);
+            _lastSpeedUpdate.remove(task.id);
+            _lastBytesReceived.remove(task.id);
+            _downloadStartTime.remove(task.id);
+            _downloadStartBytes.remove(task.id);
+            _lastDbUpdate.remove(task.id);
+            _processQueue();
+            return;
+          }
+          updatedTask = updatedTask.copyWith(
+            link: task.link.copyWith(debridResolved: false),
+            status: DownloadStatus.failed,
+            error: 'Debrid link expired and re-resolution kept failing',
+          );
+          await _notifications.updateForTask(updatedTask);
+        } else {
+          final isAuthError = statusCode == 401 || statusCode == 403;
+          if (isAuthError) {
+            await adapter.onAuthFailure(task.link);
+          }
 
-        updatedTask = updatedTask.copyWith(
-          status: DownloadStatus.failed,
-          error: isAuthError
-              ? authRequiredError
-              : (error.message ?? 'Download failed'),
-        );
-        await _notifications.updateForTask(updatedTask);
+          updatedTask = updatedTask.copyWith(
+            status: DownloadStatus.failed,
+            error: isAuthError
+                ? authRequiredError
+                : (error.message ?? 'Download failed'),
+          );
+          await _notifications.updateForTask(updatedTask);
+        }
       }
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
@@ -705,10 +756,13 @@ class DownloadService {
 
   /// Try to turn a torrent [task] into an HTTP download via the configured
   /// debrid provider. Shows "Resolving/Caching on debrid…" while polling.
-  /// Returns the rewritten task on success, or null to fall back to P2P.
+  /// Returns null to fall back to P2P, or to abort after cancel/pause.
   Future<DownloadTask?> _tryResolveViaDebrid(DownloadTask task) async {
     final debrid = _debrid;
     if (debrid == null) return null;
+
+    final cancelToken = CancelToken();
+    _activeCancelTokens[task.id] = cancelToken;
 
     final working = task.copyWith(
       status: DownloadStatus.downloading,
@@ -721,6 +775,8 @@ class DownloadService {
 
     final httpLink = await debrid.resolveTorrentLink(
       task.link,
+      isCancelled: () =>
+          cancelToken.isCancelled || !_activeTasks.containsKey(task.id),
       onCaching: (status) {
         final current = _activeTasks[task.id];
         if (current == null) return;
@@ -733,7 +789,15 @@ class DownloadService {
       },
     );
 
+    if (identical(_activeCancelTokens[task.id], cancelToken)) {
+      _activeCancelTokens.remove(task.id);
+    }
+
     if (httpLink == null) return null;
+    // Cancelled/paused while the provider was finishing — discard the link
+    if (cancelToken.isCancelled || !_activeTasks.containsKey(task.id)) {
+      return null;
+    }
     return task.copyWith(
       link: httpLink,
       status: DownloadStatus.pending,
@@ -850,7 +914,7 @@ class DownloadService {
           fileIndices: [fileIndex],
         );
       } else {
-        final magnet = buildMagnetUri(infohash);
+        final magnet = await magnetForInfohash(_romDb, infohash);
         await _torrents.addTorrent(
           magnet: magnet,
           fileIndices: [fileIndex],
@@ -1132,6 +1196,7 @@ class DownloadService {
         // Tear the torrent down on the libtorrent side; the .fastresume
         // file persists so resume picks up where we left off.
         await _stopTorrentSubscription(task);
+        _activeCancelTokens.remove(id)?.cancel('Paused by user');
         _activeTasks.remove(id);
         final paused = task.copyWith(status: DownloadStatus.paused);
         await _db.updateDownload(paused);
@@ -1181,6 +1246,7 @@ class DownloadService {
     _downloadStartTime.remove(id);
     _downloadStartBytes.remove(id);
     _lastDbUpdate.remove(id);
+    _debridRelinkAttempts.remove(id);
 
     await _db.deleteDownload(id);
 
@@ -1222,7 +1288,13 @@ class DownloadService {
       }
 
       _failedUrls.remove(task.slug);
+      _debridRelinkAttempts.remove(id);
+      // Revert an expired debrid URL to torrent form so retry re-resolves
+      final link = task.link.debridResolved
+          ? task.link.copyWith(debridResolved: false)
+          : task.link;
       final updated = task.copyWith(
+        link: link,
         status: DownloadStatus.pending,
         progress: 0,
         downloadedBytes: 0,

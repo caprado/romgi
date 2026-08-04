@@ -1076,6 +1076,7 @@ class _DebridSectionState extends ConsumerState<_DebridSection> {
               onChanged: (id) {
                 if (id != null) {
                   ref.read(settingsProvider.notifier).setDebridProviderId(id);
+                  setState(() => _message = null);
                 }
               },
             ),

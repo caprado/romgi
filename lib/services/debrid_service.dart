@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -18,86 +19,130 @@ class DebridService {
         _storage = storage ??
             const FlutterSecureStorage(
               aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            );
+            ) {
+    getSelectedProviderId = () => _registry.defaultProvider.info.id;
+  }
 
   final RomDatabaseService _romDb;
   final DebridProviderRegistry _registry;
   final FlutterSecureStorage _storage;
 
-  static const String _storageKey = 'debrid.credentials.v1';
+  late String Function() getSelectedProviderId;
 
-  _Credentials? _cached;
-  bool _loaded = false;
+  static const String _legacyStorageKey = 'debrid.credentials.v1';
+
+  static String _keyFor(String providerId) =>
+      'debrid.credentials.v1.$providerId';
+
+  final Map<String, String?> _cachedKeys = {};
+  final Set<String> _loadedIds = {};
+  bool _legacyChecked = false;
 
   DebridProviderRegistry get registry => _registry;
+
+  Future<void> _migrateLegacy() async {
+    if (_legacyChecked) return;
+    _legacyChecked = true;
+    try {
+      final raw = await _storage.read(key: _legacyStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        final providerId = json['providerId'] as String? ?? '';
+        final apiKey = json['apiKey'] as String? ?? '';
+        if (providerId.isNotEmpty && apiKey.isNotEmpty) {
+          await _storage.write(key: _keyFor(providerId), value: apiKey);
+        }
+        await _storage.delete(key: _legacyStorageKey);
+      }
+    } catch (_) {
+      // Corrupt legacy blob — drop it.
+    }
+  }
+
+  Future<String?> _readKey(String providerId) async {
+    await _migrateLegacy();
+    if (_loadedIds.contains(providerId)) return _cachedKeys[providerId];
+    String? key;
+    try {
+      key = await _storage.read(key: _keyFor(providerId));
+    } catch (_) {
+      key = null;
+    }
+    _cachedKeys[providerId] = key;
+    _loadedIds.add(providerId);
+    return key;
+  }
 
   Future<void> setCredentials({
     required String providerId,
     required String apiKey,
   }) async {
-    final creds = _Credentials(providerId: providerId, apiKey: apiKey.trim());
-    await _storage.write(key: _storageKey, value: jsonEncode(creds.toJson()));
-    _cached = creds;
-    _loaded = true;
+    await _migrateLegacy();
+    final trimmed = apiKey.trim();
+    await _storage.write(key: _keyFor(providerId), value: trimmed);
+    _cachedKeys[providerId] = trimmed;
+    _loadedIds.add(providerId);
   }
 
-  Future<void> clearCredentials() async {
-    await _storage.delete(key: _storageKey);
-    _cached = null;
-    _loaded = true;
+  Future<void> clearCredentials({String? providerId}) async {
+    await _migrateLegacy();
+    final id = providerId ?? getSelectedProviderId();
+    await _storage.delete(key: _keyFor(id));
+    _cachedKeys[id] = null;
+    _loadedIds.add(id);
   }
 
-  Future<_Credentials?> _readCredentials() async {
-    if (_loaded) return _cached;
-    try {
-      final raw = await _storage.read(key: _storageKey);
-      if (raw != null && raw.isNotEmpty) {
-        _cached = _Credentials.fromJson(
-            jsonDecode(raw) as Map<String, dynamic>);
-      }
-    } catch (_) {
-      _cached = null;
+  Future<bool> isConfigured({String? providerId}) async {
+    final id = providerId ?? getSelectedProviderId();
+    final provider = _registry.byId(id);
+    if (provider == null) return false;
+    return provider.isConfigured(await _readKey(id));
+  }
+
+  /// Cache-backed; returns false until [isConfigured] has run once.
+  bool isConfiguredSync({String? providerId}) {
+    final id = providerId ?? getSelectedProviderId();
+    final provider = _registry.byId(id);
+    if (provider == null) return false;
+    if (!_loadedIds.contains(id)) {
+      unawaited(_readKey(id));
+      return false;
     }
-    _loaded = true;
-    return _cached;
+    return provider.isConfigured(_cachedKeys[id]);
   }
 
-  Future<String?> configuredProviderId() async =>
-      (await _readCredentials())?.providerId;
-
-  Future<bool> isConfigured() async {
-    final creds = await _readCredentials();
-    final provider = _registry.byId(creds?.providerId);
-    return provider != null && provider.isConfigured(creds!.apiKey);
-  }
-
-  Future<String?> testConnection() async {
-    final creds = await _readCredentials();
-    final provider = _registry.byId(creds?.providerId);
-    if (provider == null || creds == null || !provider.isConfigured(creds.apiKey)) {
+  Future<String?> testConnection({String? providerId}) async {
+    final id = providerId ?? getSelectedProviderId();
+    final provider = _registry.byId(id);
+    final key = provider == null ? null : await _readKey(id);
+    if (provider == null || !provider.isConfigured(key)) {
       return 'No API key set';
     }
-    return provider.validateKey(creds.apiKey);
+    return provider.validateKey(key!);
   }
 
   Future<DownloadLink?> resolveTorrentLink(
     DownloadLink link, {
     void Function(DebridCaching status)? onCaching,
+    bool Function()? isCancelled,
     Duration overallTimeout = const Duration(minutes: 3),
     Duration pollInterval = const Duration(seconds: 2),
   }) async {
     if (!link.isTorrent) return null;
 
-    final creds = await _readCredentials();
-    final provider = _registry.byId(creds?.providerId);
-    if (provider == null || creds == null || !provider.isConfigured(creds.apiKey)) {
-      return null;
-    }
+    final id = getSelectedProviderId();
+    final provider = _registry.byId(id);
+    if (provider == null) return null;
+    final apiKey = await _readKey(id);
+    if (!provider.isConfigured(apiKey)) return null;
+
+    bool cancelled() => isCancelled?.call() ?? false;
+    if (cancelled()) return null;
 
     final infohash = link.torrentInfohash!.toLowerCase();
     final req = DebridFileRequest(
       infohash: infohash,
-      magnet: await _magnetFor(link, infohash),
+      magnet: await magnetForInfohash(_romDb, infohash),
       fileIndex: link.torrentFileIndex ?? 0,
       filePath: link.torrentFilePath,
       expectedSize: link.size,
@@ -108,7 +153,9 @@ class DebridService {
     var delay = pollInterval;
 
     while (true) {
-      final result = await provider.resolveFile(req, apiKey: creds.apiKey);
+      if (cancelled()) return null;
+      final result = await provider.resolveFile(req, apiKey: apiKey!);
+      if (cancelled()) return null;
 
       switch (result) {
         case DebridReady ready:
@@ -121,7 +168,9 @@ class DebridService {
           await Future.delayed(caching.retryAfter ?? delay);
           delay = _nextDelay(delay, maxDelay);
         case DebridError error:
-          if (error.authError) return null; // bad key — polling won't help
+          if (error.authError || error.permanent) {
+            return null; // bad key or terminal error — polling won't help
+          }
           if (DateTime.now().isAfter(deadline)) return null;
           await Future.delayed(
               error.rateLimited ? const Duration(seconds: 10) : delay);
@@ -135,13 +184,6 @@ class DebridService {
     return doubled > max ? max : doubled;
   }
 
-  Future<String> _magnetFor(DownloadLink link, String infohash) async {
-    final meta = await _romDb.getTorrentMetadata(infohash);
-    final stored = meta?.magnet;
-    if (stored != null && stored.isNotEmpty) return stored;
-    return buildMagnetUri(infohash, trackers: meta?.trackers);
-  }
-
   DownloadLink _toHttpLink(
     DownloadLink original,
     DebridReady ready,
@@ -151,22 +193,8 @@ class DebridService {
       url: ready.url,
       host: providerName,
       requiresAuth: false,
-      clearTorrentFields: true,
+      debridResolved: true,
       size: ready.size ?? original.size,
     );
   }
-}
-
-class _Credentials {
-  final String providerId;
-  final String apiKey;
-
-  const _Credentials({required this.providerId, required this.apiKey});
-
-  Map<String, dynamic> toJson() => {'providerId': providerId, 'apiKey': apiKey};
-
-  factory _Credentials.fromJson(Map<String, dynamic> json) => _Credentials(
-    providerId: json['providerId'] as String? ?? '',
-    apiKey: json['apiKey'] as String? ?? '',
-  );
 }

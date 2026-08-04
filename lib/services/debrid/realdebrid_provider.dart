@@ -56,17 +56,18 @@ class RealDebridProvider implements DebridProvider {
     try {
       // 1. Find-or-add. addMagnet is NOT idempotent, so look for an existing
       //    torrent with this hash first.
-      final list = await _dio.get(
-        '/torrents',
-        queryParameters: {'limit': 100},
-        options: _auth(apiKey),
-      );
-      final listErr = _authError(list);
-      if (listErr != null) return listErr;
-
       String? id;
-      final listData = list.data;
-      if (listData is List) {
+      for (var page = 1; page <= 3 && id == null; page++) {
+        final list = await _dio.get(
+          '/torrents',
+          queryParameters: {'limit': 100, 'page': page},
+          options: _auth(apiKey),
+        );
+        final listErr = _authError(list);
+        if (listErr != null) return listErr;
+
+        final listData = list.data;
+        if (listData is! List || listData.isEmpty) break;
         for (final item in listData) {
           if (item is Map &&
               (item['hash'] as String?)?.toLowerCase() == req.infohash) {
@@ -74,6 +75,7 @@ class RealDebridProvider implements DebridProvider {
             break;
           }
         }
+        if (listData.length < 100) break;
       }
 
       if (id == null) {
@@ -93,6 +95,10 @@ class RealDebridProvider implements DebridProvider {
       final info = await _dio.get('/torrents/info/$id', options: _auth(apiKey));
       final infoErr = _authError(info);
       if (infoErr != null) return infoErr;
+      if (info.statusCode == 404) {
+        // Torrent deleted server-side; the next poll re-adds the magnet.
+        return const DebridCaching();
+      }
       final data = info.data;
       if (data is! Map) return const DebridCaching();
 
@@ -113,18 +119,36 @@ class RealDebridProvider implements DebridProvider {
         case 'waiting_files_selection':
           final target = _pickFile(files, req);
           if (target == null) return const DebridNotCached();
-          await _dio.post(
+          final sel = await _dio.post(
             '/torrents/selectFiles/$id',
             data: FormData.fromMap({'files': '${target['id']}'}),
             options: _auth(apiKey),
           );
+          final selErr = _authError(sel);
+          if (selErr != null) return selErr;
+          final selCode = sel.statusCode ?? 0;
+          if (selCode == 404) {
+            // Torrent vanished; the next poll re-adds it.
+            return const DebridCaching();
+          }
+          if (selCode >= 400) {
+            return DebridError(
+              'Real-Debrid selectFiles failed ($selCode)',
+              permanent: true,
+            );
+          }
           return const DebridCaching();
 
         case 'downloaded':
           final target = _pickFile(files, req);
           if (target == null) return const DebridNotCached();
           final link = _linkForFile(files, links, target);
-          if (link == null) return const DebridNotCached();
+          if (link == null) {
+            // Wrong file was selected earlier — delete so the next poll
+            // re-adds it and selects the right one.
+            await _dio.delete('/torrents/delete/$id', options: _auth(apiKey));
+            return const DebridCaching();
+          }
           final unres = await _dio.post(
             '/unrestrict/link',
             data: FormData.fromMap({'link': link}),
@@ -198,7 +222,6 @@ class RealDebridProvider implements DebridProvider {
       ..sort((a, b) => (_asInt(a['id']) ?? 0).compareTo(_asInt(b['id']) ?? 0));
     final idx = selected.indexWhere((f) => f['id'] == target['id']);
     if (idx >= 0 && idx < links.length) return links[idx] as String?;
-    if (links.length == 1) return links.first as String?;
     return null;
   }
 }

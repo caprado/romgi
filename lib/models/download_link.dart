@@ -14,6 +14,10 @@ class DownloadLink {
   final int? torrentFileIndex;
   final String? torrentFilePath;
 
+  /// Debrid-resolved CDN link; torrent fields are kept so an expired URL
+  /// can be re-resolved.
+  final bool debridResolved;
+
   const DownloadLink({
     required this.name,
     required this.type,
@@ -29,9 +33,10 @@ class DownloadLink {
     this.torrentInfohash,
     this.torrentFileIndex,
     this.torrentFilePath,
+    this.debridResolved = false,
   });
 
-  bool get isTorrent => torrentInfohash != null;
+  bool get isTorrent => torrentInfohash != null && !debridResolved;
 
   DownloadLink copyWith({
     String? name,
@@ -45,7 +50,7 @@ class DownloadLink {
     String? sourceUrl,
     String? sourceId,
     bool? requiresAuth,
-    bool clearTorrentFields = false,
+    bool? debridResolved,
   }) {
     return DownloadLink(
       name: name ?? this.name,
@@ -59,9 +64,10 @@ class DownloadLink {
       sourceUrl: sourceUrl ?? this.sourceUrl,
       sourceId: sourceId ?? this.sourceId,
       requiresAuth: requiresAuth ?? this.requiresAuth,
-      torrentInfohash: clearTorrentFields ? null : torrentInfohash,
-      torrentFileIndex: clearTorrentFields ? null : torrentFileIndex,
-      torrentFilePath: clearTorrentFields ? null : torrentFilePath,
+      torrentInfohash: torrentInfohash,
+      torrentFileIndex: torrentFileIndex,
+      torrentFilePath: torrentFilePath,
+      debridResolved: debridResolved ?? this.debridResolved,
     );
   }
 
@@ -81,6 +87,7 @@ class DownloadLink {
       torrentInfohash: json['torrent_infohash'] as String?,
       torrentFileIndex: json['torrent_file_index'] as int?,
       torrentFilePath: json['torrent_file_path'] as String?,
+      debridResolved: (json['debrid_resolved'] as int? ?? 0) != 0,
     );
   }
 
@@ -100,6 +107,7 @@ class DownloadLink {
       if (torrentInfohash != null) 'torrent_infohash': torrentInfohash,
       if (torrentFileIndex != null) 'torrent_file_index': torrentFileIndex,
       if (torrentFilePath != null) 'torrent_file_path': torrentFilePath,
+      if (debridResolved) 'debrid_resolved': 1,
     };
   }
 }

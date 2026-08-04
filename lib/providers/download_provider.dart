@@ -273,11 +273,13 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
 ) {
   final service = ref.watch(downloadServiceProvider);
   final settings = ref.watch(settingsProvider);
+  final debridService = ref.watch(debridServiceProvider);
   service.shouldExtractForPlatform =
       (platform) => settings.shouldExtractForPlatform(platform);
   service.getLinkResolverPrefs = () => LinkResolverPrefs(
         torrentsDisabled: settings.torrentsDisabled,
-        debridEnabled: settings.debridEnabled,
+        debridEnabled:
+            settings.debridEnabled && debridService.isConfiguredSync(),
       );
   final notifier = DownloadNotifier(
     service,

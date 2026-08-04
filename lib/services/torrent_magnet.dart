@@ -1,3 +1,5 @@
+import 'rom_database_service.dart';
+
 /// Bundled into magnet URIs for libtorrent and the debrid fallback. HTTPS
 /// first because some networks (and most Android emulators) block UDP.
 const List<String> kPublicTrackers = <String>[
@@ -24,4 +26,15 @@ String buildMagnetUri(String infohash, {List<String>? trackers}) {
     parts.add('tr=${Uri.encodeQueryComponent(tracker)}');
   }
   return 'magnet:?${parts.join('&')}';
+}
+
+/// Prefers the catalog's stored magnet (and trackers) over a synthesized one.
+Future<String> magnetForInfohash(
+  RomDatabaseService romDb,
+  String infohash,
+) async {
+  final meta = await romDb.getTorrentMetadata(infohash);
+  final stored = meta?.magnet;
+  if (stored != null && stored.isNotEmpty) return stored;
+  return buildMagnetUri(infohash, trackers: meta?.trackers);
 }

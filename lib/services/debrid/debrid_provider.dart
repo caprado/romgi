@@ -55,10 +55,14 @@ class DebridError extends DebridResult {
   final bool authError;
   final bool rateLimited;
 
+  /// Retrying cannot help — the poll loop aborts instead of spinning.
+  final bool permanent;
+
   const DebridError(
     this.message, {
     this.authError = false,
     this.rateLimited = false,
+    this.permanent = false,
   });
 }
 

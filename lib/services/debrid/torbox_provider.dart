@@ -64,6 +64,8 @@ class TorboxProvider implements DebridProvider {
       );
       final authErr = _authError(created);
       if (authErr != null) return authErr;
+      final createdErr = _envelopeError(created);
+      if (createdErr != null) return createdErr;
 
       final createdData = _data(created);
       int? torrentId =
@@ -104,6 +106,8 @@ class TorboxProvider implements DebridProvider {
       );
       final dlAuth = _authError(dl);
       if (dlAuth != null) return dlAuth;
+      final dlErr = _envelopeError(dl);
+      if (dlErr != null) return dlErr;
 
       final url = _data(dl);
       if (url is String && url.isNotEmpty) {
@@ -190,6 +194,40 @@ Object? _data(Response res) {
   final body = res.data;
   if (body is Map<String, dynamic>) return body['data'];
   return null;
+}
+
+const _authErrorCodes = {
+  'AUTH_ERROR',
+  'BAD_TOKEN',
+  'OAUTH_VERIFICATION_ERROR',
+  'NO_AUTH',
+};
+
+const _permanentErrorCodes = {
+  'ACTIVE_LIMIT',
+  'MONTHLY_LIMIT',
+  'COOLDOWN_LIMIT',
+  'DOWNLOAD_TOO_LARGE',
+  'INVALID_MAGNET',
+  'INVALID_TORRENT',
+  'PLAN_RESTRICTED_FEATURE',
+  'MISSING_REQUIRED_OPTION',
+  'INVALID_OPTION',
+};
+
+/// TorBox reports failures as `success: false` even on HTTP 200.
+DebridError? _envelopeError(Response res) {
+  final body = res.data;
+  if (body is! Map<String, dynamic> || body['success'] != false) return null;
+  final code = body['error'] as String? ?? '';
+  final detail = body['detail'] as String? ?? '';
+  final message =
+      detail.isNotEmpty ? detail : (code.isNotEmpty ? code : 'request failed');
+  return DebridError(
+    'TorBox: $message',
+    authError: _authErrorCodes.contains(code),
+    permanent: _permanentErrorCodes.contains(code),
+  );
 }
 
 DebridError? _authError(Response res) {
