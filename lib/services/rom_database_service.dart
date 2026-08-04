@@ -11,7 +11,7 @@ import '../models/models.dart';
 /// Catalog schema this build expects. Mirror of
 /// db/database/db_manager.py:SCHEMA_VERSION. On mismatch the local DB
 /// is wiped and re-downloaded; no live migrations.
-const int kAppExpectedSchemaVersion = 3;
+const int kAppExpectedSchemaVersion = 4;
 
 class DatabaseVersion {
   final String version;
@@ -78,6 +78,8 @@ class RomDatabaseService {
   bool get hasRaColumns => _hasRaColumns;
   bool _hasTorrentsTable = false;
   bool get hasTorrentsTable => _hasTorrentsTable;
+  bool _hasEntryGroups = false;
+  bool get hasEntryGroups => _hasEntryGroups;
   final Dio _dio;
 
   RomDatabaseService({Dio? dio})
@@ -290,6 +292,12 @@ class RomDatabaseService {
       "SELECT name FROM sqlite_master WHERE type='table' AND name='torrents'",
     );
     _hasTorrentsTable = torrentsTable.isNotEmpty;
+    // Feature-detect the grouping tables so a pre-v4 catalog (or a mid-
+    // transition DB) simply hides disc features instead of erroring.
+    final groupTable = await _database!.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='entry_groups'",
+    );
+    _hasEntryGroups = groupTable.isNotEmpty;
     return _database!;
   }
 
@@ -535,6 +543,58 @@ class RomDatabaseService {
     );
     if (rows.isEmpty) return null;
     return TorrentMetadata.fromRow(rows.first);
+  }
+
+  /// The group [slug] belongs to (e.g. its multi-disc set), or null if the
+  /// entry is standalone or the catalog predates grouping. Members are
+  /// ordered by disc index.
+  Future<EntryGroup?> getEntryGroup(String slug) async {
+    final db = await database;
+    if (!_hasEntryGroups) return null;
+
+    final membership = await db.query(
+      'entry_group_members',
+      columns: ['group_id'],
+      where: 'entry = ?',
+      whereArgs: [slug],
+      limit: 1,
+    );
+    if (membership.isEmpty) return null;
+    final groupId = membership.first['group_id'] as String;
+
+    final groupRows = await db.query(
+      'entry_groups',
+      where: 'id = ?',
+      whereArgs: [groupId],
+      limit: 1,
+    );
+    if (groupRows.isEmpty) return null;
+    final group = groupRows.first;
+
+    final memberRows = await db.rawQuery('''
+      SELECT gm.entry, gm.member_index, gm.member_label, e.title
+      FROM entry_group_members gm
+      JOIN entries e ON e.slug = gm.entry
+      WHERE gm.group_id = ?
+      ORDER BY gm.member_index
+    ''', [groupId]);
+
+    final members = memberRows.map((m) {
+      return EntryGroupMember(
+        slug: m['entry'] as String,
+        title: m['title'] as String? ?? '',
+        index: (m['member_index'] as int?) ?? 0,
+        label: m['member_label'] as String? ?? '',
+      );
+    }).toList();
+
+    return EntryGroup(
+      id: group['id'] as String,
+      kind: group['kind'] as String? ?? 'disc',
+      title: group['title'] as String? ?? '',
+      platform: group['platform'] as String? ?? '',
+      members: members,
+    );
   }
 
   Future<RomEntry?> getRandomEntry({String? platformId}) async {

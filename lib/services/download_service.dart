@@ -15,6 +15,7 @@ import 'debrid_service.dart';
 import 'host_adapter.dart';
 import 'link_resolver.dart';
 import 'notification_service.dart';
+import 'playlist_writer.dart';
 import 'rom_database_service.dart';
 import 'seven_zip_service.dart';
 import 'storage_service.dart';
@@ -22,6 +23,24 @@ import 'torrent_magnet.dart';
 import 'torrent_service.dart';
 
 enum AddDownloadResult { added, duplicate }
+
+/// Outcome of enqueuing a whole disc group at once.
+class DiscGroupDownloadResult {
+  /// Newly queued discs.
+  final int added;
+
+  /// Discs already downloading/queued/downloaded (skipped as duplicates).
+  final int duplicates;
+
+  /// Discs with no usable link under the current prefs (e.g. torrents off).
+  final int skipped;
+
+  const DiscGroupDownloadResult({
+    this.added = 0,
+    this.duplicates = 0,
+    this.skipped = 0,
+  });
+}
 
 class DownloadService {
   final DatabaseService _db;
@@ -32,6 +51,7 @@ class DownloadService {
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
   final DebridService? _debrid;
+  late final PlaylistWriter _playlistWriter;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
   final Dio _dio;
   Dio? _nativeDio;
@@ -88,7 +108,12 @@ class DownloadService {
         _torrents = torrents,
         _sevenZip = sevenZip,
         _debrid = debrid,
-        _dio = dio ?? Dio();
+        _dio = dio ?? Dio() {
+    _playlistWriter = PlaylistWriter(
+      getGroupMembers: _db.getDownloadsByGroup,
+      getPlatformDirectory: _storage.getPlatformDirectory,
+    );
+  }
 
   Future<void> initialize() async {
     await _notifications.initialize();
@@ -176,6 +201,10 @@ class DownloadService {
     required String platform,
     String? boxartUrl,
     required DownloadLink link,
+    String? groupId,
+    int? groupIndex,
+    String? groupTitle,
+    int? groupTotal,
   }) async {
     final existingDownload = await _db.findExistingDownload(slug);
     if (existingDownload != null) {
@@ -191,6 +220,10 @@ class DownloadService {
       link: link,
       status: DownloadStatus.pending,
       createdAt: DateTime.now(),
+      groupId: groupId,
+      groupIndex: groupIndex,
+      groupTitle: groupTitle,
+      groupTotal: groupTotal,
     );
 
     await _db.insertDownload(downloadTask);
@@ -200,6 +233,99 @@ class DownloadService {
 
     return (AddDownloadResult.added, downloadTask);
   }
+
+  /// Enqueue every disc in [group], picking each disc's best link with the
+  /// same [LinkResolver] the detail screen uses. Once all members finish, a
+  /// `.m3u` playlist is written beside the discs (see [_maybeWritePlaylist]).
+  Future<DiscGroupDownloadResult> addDiscGroup(
+    EntryGroup group, {
+    required LinkResolverPrefs prefs,
+    Map<String, int> sourcePriority = const {},
+  }) async {
+    final resolver = LinkResolver(sourcePriority: sourcePriority);
+    var added = 0;
+    var duplicates = 0;
+    var skipped = 0;
+
+    for (final member in group.members) {
+      final entry = await _romDb.getEntry(member.slug);
+      if (entry == null) {
+        skipped++;
+        continue;
+      }
+
+      final ranked = resolver.rank(entry.links, prefs);
+      if (ranked.isEmpty) {
+        skipped++;
+        continue;
+      }
+
+      final (result, task) = await addDownload(
+        slug: entry.slug,
+        title: entry.title,
+        platform: entry.platform,
+        boxartUrl: entry.boxartUrl,
+        link: ranked.first.link,
+        groupId: group.id,
+        groupIndex: member.index,
+        groupTitle: group.title,
+        groupTotal: group.members.length,
+      );
+
+      if (result == AddDownloadResult.duplicate) {
+        duplicates++;
+        await _backfillGroupMetadata(task, group, member);
+      } else {
+        added++;
+      }
+    }
+
+    return DiscGroupDownloadResult(
+      added: added,
+      duplicates: duplicates,
+      skipped: skipped,
+    );
+  }
+
+  Future<void> _backfillGroupMetadata(
+    DownloadTask existing,
+    EntryGroup group,
+    EntryGroupMember member,
+  ) async {
+    if (existing.groupId != null) return;
+
+    final backfilled = existing.copyWith(
+      error: existing.error,
+      groupId: group.id,
+      groupIndex: member.index,
+      groupTitle: group.title,
+      groupTotal: group.members.length,
+    );
+    await _db.updateDownloadGroup(
+      backfilled.id,
+      groupId: group.id,
+      groupIndex: member.index,
+      groupTitle: group.title,
+      groupTotal: group.members.length,
+    );
+
+    final active = _activeTasks[backfilled.id];
+    if (active != null) {
+      _activeTasks[backfilled.id] = active.copyWith(
+        error: active.error,
+        groupId: group.id,
+        groupIndex: member.index,
+        groupTitle: group.title,
+        groupTotal: group.members.length,
+      );
+    }
+
+    _downloadController.add(backfilled);
+    await _maybeWritePlaylist(backfilled);
+  }
+
+  Future<void> _maybeWritePlaylist(DownloadTask task) =>
+      _playlistWriter.maybeWritePlaylist(task);
 
   Future<void> _processQueue() async {
     if (_isProcessingQueue) return;
@@ -597,6 +723,7 @@ class DownloadService {
       await _db.updateDownload(updatedTask);
       _downloadController.add(updatedTask);
       await _notifications.updateForTask(updatedTask);
+      await _maybeWritePlaylist(updatedTask);
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel) {
         // Download was paused/cancelled
@@ -886,6 +1013,7 @@ class DownloadService {
       _activeTasks.remove(task.id);
       await _db.updateDownload(completed);
       _downloadController.add(completed);
+      await _maybeWritePlaylist(completed);
       _processQueue();
       return;
     }
@@ -1058,6 +1186,7 @@ class DownloadService {
     await _db.updateDownload(completed);
     _downloadController.add(completed);
     await _updateNotifications();
+    await _maybeWritePlaylist(completed);
     _processQueue();
   }
 

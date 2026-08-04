@@ -1,5 +1,6 @@
 export 'download_link.dart';
 export 'download_task.dart';
+export 'entry_group.dart';
 export 'favorite.dart';
 export 'platform.dart';
 export 'recently_viewed.dart';

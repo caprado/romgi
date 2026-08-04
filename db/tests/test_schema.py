@@ -48,8 +48,8 @@ def _table_columns(db_path: Path, table: str) -> list[str]:
         con.close()
 
 
-def test_schema_version_is_3():
-    assert db_manager.SCHEMA_VERSION == 3
+def test_schema_version_is_4():
+    assert db_manager.SCHEMA_VERSION == 4
 
 
 def test_init_creates_v2_tables(fresh_db):
@@ -57,6 +57,7 @@ def test_init_creates_v2_tables(fresh_db):
         "platforms", "entries", "entries_fts", "regions",
         "regions_entries", "links",
         "sources", "source_health", "user_sources", "torrents",
+        "entry_groups", "entry_group_members",
     }
     cur = db_manager.cur
     assert cur is not None

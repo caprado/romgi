@@ -226,6 +226,20 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     );
   }
 
+  Future<DiscGroupDownloadResult> addDiscGroup(
+    EntryGroup group, {
+    required LinkResolverPrefs prefs,
+    Map<String, int> sourcePriority = const {},
+  }) async {
+    final result = await _service.addDiscGroup(
+      group,
+      prefs: prefs,
+      sourcePriority: sourcePriority,
+    );
+    await refresh();
+    return result;
+  }
+
   Future<void> pauseDownload(String id) async {
     await _service.pauseDownload(id);
     await refresh();

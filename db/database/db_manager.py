@@ -19,7 +19,7 @@ DB_OLD_NAME = 'romdb_old.db'
 # Bump on any schema change. The app reads version.json#schema_version
 # and wipes its local catalog DB on mismatch.
 # Mirror of: lib/services/rom_database_service.dart `kAppExpectedSchemaVersion`.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 con: sqlite3.Connection | None = None
 cur: sqlite3.Cursor | None = None
@@ -216,7 +216,33 @@ def init_database() -> None:
         )
     ''')
 
+    # Logical groups relating entries (multi-disc games today; the `kind`
+    # discriminator + metadata_json leave room for revisions/bundles later).
+    cur.execute('''
+        CREATE TABLE entry_groups (
+            id            TEXT PRIMARY KEY,
+            kind          TEXT NOT NULL,
+            title         TEXT,
+            platform      TEXT,
+            member_count  INTEGER NOT NULL,
+            metadata_json TEXT
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE entry_group_members (
+            group_id     TEXT NOT NULL REFERENCES entry_groups (id),
+            entry        TEXT NOT NULL REFERENCES entries (slug),
+            member_index INTEGER,
+            member_label TEXT,
+            PRIMARY KEY (group_id, entry)
+        )
+    ''')
+
     cur.execute('CREATE INDEX idx_entries_platform ON entries (platform);')
+    cur.execute('CREATE INDEX idx_entry_groups_kind ON entry_groups (kind);')
+    cur.execute(
+        'CREATE INDEX idx_group_members_entry ON entry_group_members (entry);')
     cur.execute(
         'CREATE INDEX idx_regions_entries_entry ON regions_entries (entry);')
     cur.execute(
@@ -409,6 +435,50 @@ def _insert_link(entry_slug: str, link: dict[str, Any], *, ignore_duplicates: bo
         link.get('torrent_file_index'),
         link.get('torrent_file_path'),
     ))
+
+
+def fetch_entries_for_grouping() -> list[tuple[str, str, str, tuple[str, ...]]]:
+    """Return (slug, title, platform, regions) for every entry.
+
+    Regions are sorted+deduped so grouping keys are order-independent. Called
+    by the build driver after all entries are inserted, before close.
+    """
+    assert cur is not None
+    cur.execute('''
+        SELECT e.slug, e.title, e.platform, GROUP_CONCAT(re.region)
+        FROM entries e
+        LEFT JOIN regions_entries re ON re.entry = e.slug
+        GROUP BY e.slug
+    ''')
+    out: list[tuple[str, str, str, tuple[str, ...]]] = []
+    for slug, title, platform, regions_csv in cur.fetchall():
+        regions = tuple(sorted({r for r in (regions_csv or '').split(',') if r}))
+        out.append((slug, title, platform, regions))
+    return out
+
+
+def store_entry_groups(groups: Any) -> None:
+    """Persist grouping results into entry_groups / entry_group_members."""
+    assert cur is not None
+    for group in groups:
+        cur.execute('''
+            INSERT INTO entry_groups
+                (id, kind, title, platform, member_count, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            group.id,
+            group.kind,
+            group.title,
+            group.platform,
+            len(group.members),
+            json.dumps(group.metadata, sort_keys=True) if group.metadata else None,
+        ))
+        for member in group.members:
+            cur.execute('''
+                INSERT OR IGNORE INTO entry_group_members
+                    (group_id, entry, member_index, member_label)
+                VALUES (?, ?, ?, ?)
+            ''', (group.id, member.slug, member.index, member.label))
 
 
 def close_database() -> None:
