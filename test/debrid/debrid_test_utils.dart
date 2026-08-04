@@ -32,6 +32,14 @@ ResponseBody jsonBody(String body, [int code = 200]) => ResponseBody.fromString(
       },
     );
 
+ResponseBody textBody(String body, [int code = 200]) => ResponseBody.fromString(
+      body,
+      code,
+      headers: {
+        Headers.contentTypeHeader: ['text/plain'],
+      },
+    );
+
 Dio stubbedDio(String baseUrl, Map<String, ResponseBody Function(RequestOptions)> routes) {
   return Dio(BaseOptions(
     baseUrl: baseUrl,

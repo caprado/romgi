@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/providers.dart';
+import '../services/metadata/metadata_provider.dart';
 import '../services/rom_database_service.dart';
 import '../services/storage_service.dart';
 import '../utils/utils.dart';
@@ -102,6 +103,11 @@ class SettingsScreen extends ConsumerWidget {
 
                 _SectionHeader(title: 'Debrid Service'),
                 const _DebridSection(),
+
+                const Divider(height: 32),
+
+                _SectionHeader(title: 'Game Metadata'),
+                const _MetadataSection(),
 
                 const Divider(height: 32),
 
@@ -988,6 +994,221 @@ class _DatabaseUpdateDialogState extends ConsumerState<_DatabaseUpdateDialog> {
         _error = 'Download failed: $e';
       });
     }
+  }
+}
+
+class _MetadataSection extends ConsumerWidget {
+  const _MetadataSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final providers = ref.read(gameMetadataServiceProvider).registry.providers;
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.image_outlined),
+          title: const Text('Show game metadata'),
+          subtitle: const Text(
+            'Descriptions, screenshots and artwork on game pages '
+            '(ScreenScraper, SteamGridDB)',
+          ),
+          value: settings.metadataEnabled,
+          onChanged: (value) =>
+              ref.read(settingsProvider.notifier).setMetadataEnabled(value),
+        ),
+        if (settings.metadataEnabled)
+          ...providers.map(
+            (provider) => _MetadataProviderTile(provider: provider),
+          ),
+      ],
+    );
+  }
+}
+
+class _MetadataProviderTile extends ConsumerStatefulWidget {
+  final GameMetadataProvider provider;
+
+  const _MetadataProviderTile({required this.provider});
+
+  @override
+  ConsumerState<_MetadataProviderTile> createState() =>
+      _MetadataProviderTileState();
+}
+
+class _MetadataProviderTileState extends ConsumerState<_MetadataProviderTile> {
+  late final Map<String, TextEditingController> _controllers = {
+    for (final field in widget.provider.credentialFields)
+      field.key: TextEditingController(),
+  };
+  late final Map<String, bool> _obscure = {
+    for (final field in widget.provider.credentialFields)
+      field.key: field.obscure,
+  };
+  bool _testing = false;
+  String? _message;
+
+  String get _providerId => widget.provider.info.id;
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _invalidateConfigured() {
+    ref.invalidate(metadataConfiguredProvider);
+    ref.invalidate(metadataProviderConfiguredProvider(_providerId));
+  }
+
+  Future<void> _save() async {
+    final credentials = {
+      for (final entry in _controllers.entries)
+        entry.key: entry.value.text.trim(),
+    };
+    final missing = widget.provider.credentialFields.any(
+      (field) => !field.optional && (credentials[field.key] ?? '').isEmpty,
+    );
+    if (missing) {
+      setState(() => _message = 'Fill in all required fields');
+      return;
+    }
+    await ref.read(gameMetadataServiceProvider).setCredentials(
+          providerId: _providerId,
+          credentials: credentials,
+        );
+    for (final controller in _controllers.values) {
+      controller.clear();
+    }
+    _invalidateConfigured();
+    if (mounted) setState(() => _message = 'Credentials saved');
+  }
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _message = null;
+    });
+    final error =
+        await ref.read(gameMetadataServiceProvider).testConnection(_providerId);
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _message = error ?? 'Connected successfully';
+    });
+  }
+
+  Future<void> _clear() async {
+    await ref.read(gameMetadataServiceProvider).clearCredentials(_providerId);
+    _invalidateConfigured();
+    if (mounted) setState(() => _message = 'Credentials cleared');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final configured =
+        ref.watch(metadataProviderConfiguredProvider(_providerId));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text(
+            widget.provider.info.name,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+          ),
+        ),
+        for (final field in widget.provider.credentialFields)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _controllers[field.key],
+              obscureText: _obscure[field.key]!,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText:
+                    field.optional ? '${field.label} (optional)' : field.label,
+                border: const OutlineInputBorder(),
+                suffixIcon: field.obscure
+                    ? IconButton(
+                        icon: Icon(
+                          _obscure[field.key]!
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                        onPressed: () => setState(
+                          () => _obscure[field.key] = !_obscure[field.key]!,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              FilledButton(onPressed: _save, child: const Text('Save')),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _testing ? null : _test,
+                child: _testing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Test'),
+              ),
+              const Spacer(),
+              configured.maybeWhen(
+                data: (ok) => ok
+                    ? TextButton(onPressed: _clear, child: const Text('Clear'))
+                    : const SizedBox.shrink(),
+                orElse: () => const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+        configured.maybeWhen(
+          data: (ok) => Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Row(
+              children: [
+                Icon(
+                  ok ? Icons.check_circle : Icons.info_outline,
+                  size: 16,
+                  color: ok
+                      ? Colors.green
+                      : Theme.of(context).colorScheme.outline,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  ok ? 'Credentials saved' : 'No credentials saved',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          orElse: () => const SizedBox.shrink(),
+        ),
+        if (_message != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              _message!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
   }
 }
 

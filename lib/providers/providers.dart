@@ -4,6 +4,7 @@ export 'download_provider.dart';
 export 'favorites_provider.dart';
 export 'internet_archive_auth_provider.dart';
 export 'library_provider.dart';
+export 'metadata_provider.dart';
 export 'navigation_provider.dart';
 export 'platforms_provider.dart';
 export 'recently_viewed_provider.dart';

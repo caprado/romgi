@@ -2,6 +2,7 @@ export 'download_link.dart';
 export 'download_task.dart';
 export 'entry_group.dart';
 export 'favorite.dart';
+export 'game_metadata.dart';
 export 'platform.dart';
 export 'recently_viewed.dart';
 export 'region.dart';

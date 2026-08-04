@@ -321,6 +321,13 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
                     orElse: () => const SizedBox.shrink(),
                   ),
 
+              ref.watch(gameMetadataProvider(entry.slug)).maybeWhen(
+                    data: (metadata) => (metadata == null || metadata.isEmpty)
+                        ? const SizedBox.shrink()
+                        : _MetadataCard(metadata: metadata),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
+
               // Download links header
               Row(
                 children: [
@@ -541,6 +548,135 @@ class _DiscGroupSection extends ConsumerWidget {
                 },
               )
             : null,
+      ),
+    );
+  }
+}
+
+class _MetadataCard extends StatefulWidget {
+  final GameMetadata metadata;
+
+  const _MetadataCard({required this.metadata});
+
+  @override
+  State<_MetadataCard> createState() => _MetadataCardState();
+}
+
+class _MetadataCardState extends State<_MetadataCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final description = widget.metadata.description;
+    final hasDescription = description != null && description.isNotEmpty;
+    final media = [
+      ...widget.metadata.screenshotUrls,
+      ...widget.metadata.artworkUrls,
+    ];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.info_outline, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'About',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            if (hasDescription) ...[
+              const SizedBox(height: 8),
+              Text(
+                description,
+                maxLines: _expanded ? null : 6,
+                overflow: _expanded ? null : TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+              if (description.length > 300)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 32),
+                  ),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  child: Text(_expanded ? 'Show less' : 'Read more'),
+                ),
+            ],
+            if (media.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 150,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: media.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (context, index) => GestureDetector(
+                    onTap: () => _openViewer(context, media, index),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: CachedNetworkImage(
+                        imageUrl: media[index],
+                        height: 150,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          width: 200,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          width: 200,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: const Icon(Icons.broken_image),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openViewer(BuildContext context, List<String> media, int index) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: PageController(initialPage: index),
+              itemCount: media.length,
+              itemBuilder: (context, page) => InteractiveViewer(
+                child: Center(
+                  child: CachedNetworkImage(imageUrl: media[page]),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(dialogContext),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -16,6 +16,7 @@ class SettingsState {
   final Set<String> extractDisabledPlatforms;
   final bool debridEnabled;
   final String debridProviderId;
+  final bool metadataEnabled;
   final bool isLoading;
 
   const SettingsState({
@@ -30,6 +31,7 @@ class SettingsState {
     this.extractDisabledPlatforms = const {},
     this.debridEnabled = false,
     this.debridProviderId = 'torbox',
+    this.metadataEnabled = true,
     this.isLoading = false,
   });
 
@@ -51,6 +53,7 @@ class SettingsState {
     Set<String>? extractDisabledPlatforms,
     bool? debridEnabled,
     String? debridProviderId,
+    bool? metadataEnabled,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -69,6 +72,7 @@ class SettingsState {
           extractDisabledPlatforms ?? this.extractDisabledPlatforms,
       debridEnabled: debridEnabled ?? this.debridEnabled,
       debridProviderId: debridProviderId ?? this.debridProviderId,
+      metadataEnabled: metadataEnabled ?? this.metadataEnabled,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -102,6 +106,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       'extract_disabled_platform_';
   static const String _keyDebridEnabled = 'debrid_enabled';
   static const String _keyDebridProviderId = 'debrid_provider_id';
+  static const String _keyMetadataEnabled = 'metadata_enabled';
 
   SettingsNotifier() : super(const SettingsState()) {
     _loadSettings();
@@ -132,6 +137,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final debridEnabled = prefs.getBool(_keyDebridEnabled) ?? false;
     final debridProviderId =
         prefs.getString(_keyDebridProviderId) ?? 'torbox';
+    final metadataEnabled = prefs.getBool(_keyMetadataEnabled) ?? true;
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
@@ -159,6 +165,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       extractDisabledPlatforms: extractDisabledPlatforms,
       debridEnabled: debridEnabled,
       debridProviderId: debridProviderId,
+      metadataEnabled: metadataEnabled,
       isLoading: false,
     );
   }
@@ -248,6 +255,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(debridProviderId: providerId);
   }
 
+  Future<void> setMetadataEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyMetadataEnabled, value);
+    state = state.copyWith(metadataEnabled: value);
+  }
+
   Future<void> setMaxConcurrentDownloads(int value) async {
     final clamped = value.clamp(0, 10);
     final prefs = await SharedPreferences.getInstance();
@@ -266,6 +279,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyAutoExtractDisabled);
     await prefs.remove(_keyDebridEnabled);
     await prefs.remove(_keyDebridProviderId);
+    await prefs.remove(_keyMetadataEnabled);
 
     for (final key in prefs.getKeys().toList()) {
       if (key.startsWith(_keyPlatformPaths) ||

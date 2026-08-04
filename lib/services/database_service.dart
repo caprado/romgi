@@ -6,7 +6,7 @@ import '../models/models.dart';
 class DatabaseService {
   static Database? _database;
   static const String _dbName = 'romgi.db';
-  static const int _dbVersion = 7;
+  static const int _dbVersion = 8;
 
   Future<Database> get database async {
     _database ??= await _initDatabase();
@@ -104,6 +104,17 @@ class DatabaseService {
         'ALTER TABLE downloads ADD COLUMN link_debrid_resolved INTEGER NOT NULL DEFAULT 0',
       );
     }
+
+    if (oldVersion < 8) {
+      await db.execute('''
+        CREATE TABLE game_metadata (
+          cache_key TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          no_match INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -180,6 +191,15 @@ class DatabaseService {
     await db.execute(
       'CREATE INDEX idx_favorites_added_at ON favorites(added_at DESC)',
     );
+
+    await db.execute('''
+      CREATE TABLE game_metadata (
+        cache_key TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        no_match INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   Future<void> insertDownload(DownloadTask task) async {
@@ -468,5 +488,47 @@ class DatabaseService {
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM favorites');
 
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<({String payload, DateTime fetchedAt, bool noMatch})?>
+      getGameMetadataCache(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'game_metadata',
+      where: 'cache_key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+
+    final row = rows.first;
+    return (
+      payload: row['payload'] as String,
+      fetchedAt: DateTime.fromMillisecondsSinceEpoch(row['fetched_at'] as int),
+      noMatch: (row['no_match'] as int? ?? 0) != 0,
+    );
+  }
+
+  Future<void> putGameMetadataCache({
+    required String key,
+    required String payload,
+    required bool noMatch,
+  }) async {
+    final db = await database;
+    final now = DateTime.now();
+    await db.insert('game_metadata', {
+      'cache_key': key,
+      'payload': payload,
+      'fetched_at': now.millisecondsSinceEpoch,
+      'no_match': noMatch ? 1 : 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    await db.delete(
+      'game_metadata',
+      where: 'fetched_at < ?',
+      whereArgs: [
+        now.subtract(const Duration(days: 30)).millisecondsSinceEpoch,
+      ],
+    );
   }
 }
