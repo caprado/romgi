@@ -6,7 +6,7 @@ import '../models/models.dart';
 class DatabaseService {
   static Database? _database;
   static const String _dbName = 'romgi.db';
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 6;
 
   Future<Database> get database async {
     _database ??= await _initDatabase();
@@ -92,6 +92,12 @@ class DatabaseService {
         'CREATE INDEX idx_downloads_group ON downloads(group_id)',
       );
     }
+
+    if (oldVersion < 6) {
+      await db.execute(
+        'ALTER TABLE downloads ADD COLUMN group_total INTEGER',
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -127,7 +133,8 @@ class DatabaseService {
         hidden_from_history INTEGER NOT NULL DEFAULT 0,
         group_id TEXT,
         group_index INTEGER,
-        group_title TEXT
+        group_title TEXT,
+        group_total INTEGER
       )
     ''');
 
@@ -303,6 +310,27 @@ class DatabaseService {
     );
 
     return maps.map((map) => DownloadTask.fromMap(map)).toList();
+  }
+
+  Future<void> updateDownloadGroup(
+    String id, {
+    required String groupId,
+    int? groupIndex,
+    String? groupTitle,
+    int? groupTotal,
+  }) async {
+    final db = await database;
+    await db.update(
+      'downloads',
+      {
+        'group_id': groupId,
+        'group_index': groupIndex,
+        'group_title': groupTitle,
+        'group_total': groupTotal,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<List<DownloadTask>> getDownloadsByGroup(String groupId) async {

@@ -31,6 +31,8 @@ class DownloadTask {
   final String? groupId;
   final int? groupIndex;
   final String? groupTitle;
+  // Disc count of the group at queue time.
+  final int? groupTotal;
   // Torrent-only, in-memory only (not persisted). -1 means "unknown"
   // so the UI can distinguish a fresh torrent task from "0 peers".
   final int peers;
@@ -57,6 +59,7 @@ class DownloadTask {
     this.groupId,
     this.groupIndex,
     this.groupTitle,
+    this.groupTotal,
     this.peers = -1,
     this.seeds = -1,
     this.fetchingMetadata = false,
@@ -73,6 +76,10 @@ class DownloadTask {
     String? error,
     DateTime? completedAt,
     bool? hiddenFromHistory,
+    String? groupId,
+    int? groupIndex,
+    String? groupTitle,
+    int? groupTotal,
     int? peers,
     int? seeds,
     bool? fetchingMetadata,
@@ -94,9 +101,10 @@ class DownloadTask {
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
       hiddenFromHistory: hiddenFromHistory ?? this.hiddenFromHistory,
-      groupId: groupId,
-      groupIndex: groupIndex,
-      groupTitle: groupTitle,
+      groupId: groupId ?? this.groupId,
+      groupIndex: groupIndex ?? this.groupIndex,
+      groupTitle: groupTitle ?? this.groupTitle,
+      groupTotal: groupTotal ?? this.groupTotal,
       peers: peers ?? this.peers,
       seeds: seeds ?? this.seeds,
       fetchingMetadata: fetchingMetadata ?? this.fetchingMetadata,
@@ -136,6 +144,7 @@ class DownloadTask {
       'group_id': groupId,
       'group_index': groupIndex,
       'group_title': groupTitle,
+      'group_total': groupTotal,
     };
   }
 
@@ -176,6 +185,7 @@ class DownloadTask {
       groupId: map['group_id'] as String?,
       groupIndex: map['group_index'] as int?,
       groupTitle: map['group_title'] as String?,
+      groupTotal: map['group_total'] as int?,
     );
   }
 

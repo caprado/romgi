@@ -14,6 +14,7 @@ import 'database_service.dart';
 import 'host_adapter.dart';
 import 'link_resolver.dart';
 import 'notification_service.dart';
+import 'playlist_writer.dart';
 import 'rom_database_service.dart';
 import 'seven_zip_service.dart';
 import 'storage_service.dart';
@@ -47,6 +48,7 @@ class DownloadService {
   final HostAdapterRegistry _adapters;
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
+  late final PlaylistWriter _playlistWriter;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
   final Dio _dio;
   Dio? _nativeDio;
@@ -97,7 +99,12 @@ class DownloadService {
         _adapters = adapters,
         _torrents = torrents,
         _sevenZip = sevenZip,
-        _dio = dio ?? Dio();
+        _dio = dio ?? Dio() {
+    _playlistWriter = PlaylistWriter(
+      getGroupMembers: _db.getDownloadsByGroup,
+      getPlatformDirectory: _storage.getPlatformDirectory,
+    );
+  }
 
   Future<void> initialize() async {
     await _notifications.initialize();
@@ -188,6 +195,7 @@ class DownloadService {
     String? groupId,
     int? groupIndex,
     String? groupTitle,
+    int? groupTotal,
   }) async {
     final existingDownload = await _db.findExistingDownload(slug);
     if (existingDownload != null) {
@@ -206,6 +214,7 @@ class DownloadService {
       groupId: groupId,
       groupIndex: groupIndex,
       groupTitle: groupTitle,
+      groupTotal: groupTotal,
     );
 
     await _db.insertDownload(downloadTask);
@@ -242,7 +251,7 @@ class DownloadService {
         continue;
       }
 
-      final (result, _) = await addDownload(
+      final (result, task) = await addDownload(
         slug: entry.slug,
         title: entry.title,
         platform: entry.platform,
@@ -251,10 +260,12 @@ class DownloadService {
         groupId: group.id,
         groupIndex: member.index,
         groupTitle: group.title,
+        groupTotal: group.members.length,
       );
 
       if (result == AddDownloadResult.duplicate) {
         duplicates++;
+        await _backfillGroupMetadata(task, group, member);
       } else {
         added++;
       }
@@ -267,53 +278,45 @@ class DownloadService {
     );
   }
 
-  /// After a grouped task completes, write the group's `.m3u` once every
-  /// member has finished. Safe to call for non-grouped tasks (no-op) and
-  /// idempotent if two members finish near-simultaneously.
-  Future<void> _maybeWritePlaylist(DownloadTask task) async {
-    final groupId = task.groupId;
-    if (groupId == null) return;
-
-    final members = await _db.getDownloadsByGroup(groupId);
-    if (members.length < 2) return;
-    if (members.any((m) => m.status != DownloadStatus.completed)) return;
-
-    try {
-      await _writePlaylist(task.platform, task.groupTitle, members);
-    } catch (_) {
-      // A missing playlist is non-fatal — the discs are already on disk.
-    }
-  }
-
-  Future<void> _writePlaylist(
-    String platform,
-    String? groupTitle,
-    List<DownloadTask> members,
+  Future<void> _backfillGroupMetadata(
+    DownloadTask existing,
+    EntryGroup group,
+    EntryGroupMember member,
   ) async {
-    final ordered = [...members]
-      ..sort((a, b) => (a.groupIndex ?? 0).compareTo(b.groupIndex ?? 0));
+    if (existing.groupId != null) return;
 
-    // The .m3u sits in the platform dir beside the discs, so entries are
-    // referenced by filename and the emulator resolves them relatively.
-    final lines = <String>[];
-    for (final member in ordered) {
-      final filePath = member.filePath;
-      if (filePath != null) lines.add(p.basename(filePath));
+    final backfilled = existing.copyWith(
+      error: existing.error,
+      groupId: group.id,
+      groupIndex: member.index,
+      groupTitle: group.title,
+      groupTotal: group.members.length,
+    );
+    await _db.updateDownloadGroup(
+      backfilled.id,
+      groupId: group.id,
+      groupIndex: member.index,
+      groupTitle: group.title,
+      groupTotal: group.members.length,
+    );
+
+    final active = _activeTasks[backfilled.id];
+    if (active != null) {
+      _activeTasks[backfilled.id] = active.copyWith(
+        error: active.error,
+        groupId: group.id,
+        groupIndex: member.index,
+        groupTitle: group.title,
+        groupTotal: group.members.length,
+      );
     }
-    if (lines.length < 2) return;
 
-    final dir = await _storage.getPlatformDirectory(platform);
-    final name = _playlistFileName(groupTitle ?? ordered.first.title);
-    await File(p.join(dir.path, name)).writeAsString('${lines.join('\n')}\n');
+    _downloadController.add(backfilled);
+    await _maybeWritePlaylist(backfilled);
   }
 
-  String _playlistFileName(String title) {
-    final safe = title
-        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return '${safe.isEmpty ? 'playlist' : safe}.m3u';
-  }
+  Future<void> _maybeWritePlaylist(DownloadTask task) =>
+      _playlistWriter.maybeWritePlaylist(task);
 
   Future<void> _processQueue() async {
     if (_isProcessingQueue) return;
@@ -876,6 +879,7 @@ class DownloadService {
       _activeTasks.remove(task.id);
       await _db.updateDownload(completed);
       _downloadController.add(completed);
+      await _maybeWritePlaylist(completed);
       _processQueue();
       return;
     }

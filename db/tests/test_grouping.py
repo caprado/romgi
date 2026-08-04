@@ -146,7 +146,7 @@ def test_region_partitions_groups():
     ]
     groups = build_groups(entries, load_strategies())
     assert len(groups) == 2
-    assert {g.id for g in groups} == {g.id for g in groups}  # distinct keys
+    assert len({g.id for g in groups}) == 2  # distinct keys
     assert all(len(g.members) == 2 for g in groups)
 
 
