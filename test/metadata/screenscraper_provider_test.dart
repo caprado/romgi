@@ -9,7 +9,7 @@ const _base = 'https://api.screenscraper.fr/api2';
 const _search = '/api2/jeuRecherche.php';
 const _userInfo = '/api2/ssuserInfos.php';
 
-const _creds = {'username': 'user', 'password': 'pass'};
+const _creds = {'username': 'user', 'password': 'dummy-pass'};
 
 String _jeu({
   String name = 'Chrono Cross',
@@ -142,7 +142,7 @@ void main() {
     expect(query.containsKey('devid'), isFalse);
     expect(query.containsKey('devpassword'), isFalse);
     expect(query['ssid'], 'user');
-    expect(query['sspassword'], 'pass');
+    expect(query['sspassword'], 'dummy-pass');
     expect(query['systemeid'], '57');
     expect(query['softname'], 'romgi');
   });
@@ -155,12 +155,12 @@ void main() {
     await ScreenScraperProvider(dio: dio).fetch(
       title: 'Chrono Cross',
       platform: 'ps1',
-      creds: {..._creds, 'devId': 'dev', 'devPassword': 'devpass'},
+      creds: {..._creds, 'devId': 'dev', 'devPassword': 'dummy-devpass'},
     );
 
     final query = stub.calls.single.uri.queryParameters;
     expect(query['devid'], 'dev');
-    expect(query['devpassword'], 'devpass');
+    expect(query['devpassword'], 'dummy-devpass');
   });
 
   test('validateCredentials accepts a working login and flags a bad one',
