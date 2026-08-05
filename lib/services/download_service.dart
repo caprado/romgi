@@ -19,6 +19,7 @@ import 'playlist_writer.dart';
 import 'rom_database_service.dart';
 import 'seven_zip_service.dart';
 import 'storage_service.dart';
+import 'torrent_info.dart';
 import 'torrent_magnet.dart';
 import 'torrent_service.dart';
 
@@ -500,11 +501,21 @@ class DownloadService {
         // Only attempt resume if we have meaningful progress
         attemptResume = downloadedBytes > 0;
 
-        // Validate that partial file isn't larger than expected total
-        // If it is, the file is likely corrupt
         if (attemptResume &&
             task.link.size > 0 &&
             downloadedBytes >= task.link.size) {
+          if (downloadedBytes == task.link.size) {
+            // Fully downloaded in a previous session
+            updatedTask = updatedTask.copyWith(
+              progress: 1.0,
+              downloadedBytes: downloadedBytes,
+              totalBytes: downloadedBytes,
+            );
+            _activeTasks[task.id] = updatedTask;
+            await _completeHttpDownload(task, downloadPath);
+            return;
+          }
+          // Larger than expected probably corrupt, so start start over.
           await file.delete();
           downloadedBytes = 0;
           attemptResume = false;
@@ -685,45 +696,22 @@ class DownloadService {
         }
       }
 
-      if (_shouldExtract(task.link.filename, task.platform)) {
-        updatedTask = updatedTask.copyWith(status: DownloadStatus.extracting);
-        _activeTasks[task.id] = updatedTask;
+      final finalSize = await File(downloadPath).length();
+      if (task.link.size > 0 && finalSize != task.link.size) {
+        try {
+          await File(downloadPath).delete();
+        } catch (_) {}
+        updatedTask = updatedTask.copyWith(
+          status: DownloadStatus.failed,
+          error: 'Download incomplete ($finalSize of ${task.link.size} bytes)',
+        );
         await _db.updateDownload(updatedTask);
         _downloadController.add(updatedTask);
-        await _updateNotifications();
-
-        try {
-          final extractedPath = await _extractArchive(downloadPath, task.platform);
-          // Only delete archive after successful extraction
-          await File(downloadPath).delete();
-          updatedTask = updatedTask.copyWith(
-            status: DownloadStatus.completed,
-            progress: 1.0,
-            filePath: extractedPath,
-            completedAt: DateTime.now(),
-          );
-        } catch (_) {
-          // Extraction failed - keep the downloaded file as-is
-          updatedTask = updatedTask.copyWith(
-            status: DownloadStatus.completed,
-            progress: 1.0,
-            filePath: downloadPath,
-            completedAt: DateTime.now(),
-          );
-        }
-      } else {
-        updatedTask = updatedTask.copyWith(
-          status: DownloadStatus.completed,
-          progress: 1.0,
-          filePath: downloadPath,
-          completedAt: DateTime.now(),
-        );
+        await _notifications.updateForTask(updatedTask);
+        return;
       }
-      _debridRelinkAttempts.remove(task.id);
-      await _db.updateDownload(updatedTask);
-      _downloadController.add(updatedTask);
-      await _notifications.updateForTask(updatedTask);
-      await _maybeWritePlaylist(updatedTask);
+
+      await _completeHttpDownload(task, downloadPath);
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel) {
         // Download was paused/cancelled
@@ -933,6 +921,46 @@ class DownloadService {
     );
   }
 
+  Future<void> _completeHttpDownload(DownloadTask task, String downloadPath) async {
+    var updatedTask = _activeTasks[task.id] ?? task;
+    if (_shouldExtract(task.link.filename, task.platform)) {
+      updatedTask = updatedTask.copyWith(status: DownloadStatus.extracting);
+      _activeTasks[task.id] = updatedTask;
+      await _db.updateDownload(updatedTask);
+      _downloadController.add(updatedTask);
+      await _updateNotifications();
+
+      try {
+        final extractedPath = await _extractArchive(downloadPath, task.platform);
+        await File(downloadPath).delete();
+        updatedTask = updatedTask.copyWith(
+          status: DownloadStatus.completed,
+          progress: 1.0,
+          filePath: extractedPath,
+          completedAt: DateTime.now(),
+        );
+      } catch (_) {
+        // Keep the archive so a retry can re-extract without re-downloading.
+        updatedTask = updatedTask.copyWith(
+          status: DownloadStatus.failed,
+          error: 'Extraction failed — the archive may be corrupt',
+        );
+      }
+    } else {
+      updatedTask = updatedTask.copyWith(
+        status: DownloadStatus.completed,
+        progress: 1.0,
+        filePath: downloadPath,
+        completedAt: DateTime.now(),
+      );
+    }
+    _debridRelinkAttempts.remove(task.id);
+    await _db.updateDownload(updatedTask);
+    _downloadController.add(updatedTask);
+    await _notifications.updateForTask(updatedTask);
+    await _maybeWritePlaylist(updatedTask);
+  }
+
   Future<void> _failTask(DownloadTask task, String error) async {
     final failed = task.copyWith(status: DownloadStatus.failed, error: error);
     _activeTasks.remove(task.id);
@@ -947,8 +975,8 @@ class DownloadService {
     HostAdapter adapter,
   ) async {
     final infohash = task.link.torrentInfohash;
-    final fileIndex = task.link.torrentFileIndex;
-    if (infohash == null || fileIndex == null) {
+    final storedIndex = task.link.torrentFileIndex;
+    if (infohash == null || storedIndex == null) {
       final failed = task.copyWith(
         status: DownloadStatus.failed,
         error: 'Torrent metadata missing on link',
@@ -959,6 +987,7 @@ class DownloadService {
       _processQueue();
       return;
     }
+    var fileIndex = storedIndex;
 
     // If the destination file (or its extracted form) already exists
     // (e.g. previous session completed but the task was re-queued after
@@ -986,7 +1015,7 @@ class DownloadService {
         await for (final entity in platformDir.list()) {
           if (entity is File) {
             final name = p.basenameWithoutExtension(entity.path);
-            if (name == baseName) {
+            if (name == baseName && await entity.length() > 0) {
               existingPath = entity.path;
               alreadyComplete = true;
               break;
@@ -1002,7 +1031,10 @@ class DownloadService {
         try {
           finalPath = await _extractArchive(destPath, task.platform);
           await File(destPath).delete();
-        } catch (_) {}
+        } catch (_) {
+          await _failTask(task, 'Extraction failed — the archive may be corrupt');
+          return;
+        }
       }
       final completed = task.copyWith(
         status: DownloadStatus.completed,
@@ -1026,17 +1058,39 @@ class DownloadService {
     await _updateNotifications();
 
     try {
-      // Seeding is intentionally never enabled: when a torrent finishes,
-      // it's paused and no upload occurs. The Pigeon API still has a
-      // seedingEnabled field, but we always pass false.
+      // Seeding is intentionally never enabled
       await _torrents.start(seedingEnabled: false);
-      // Prefer the real .torrent file when we can derive its URL —
-      // this gives libtorrent the webseeds (HTTPS fallback peers) that
-      // a bare magnet URI strips out. Critical for archive.org content
-      // where the swarm is often dead and HTTPS is the actual reliable
-      // path.
+      // Prefer the real .torrent file when we can derive its URL
       final torrentBytes = await _tryFetchTorrentFile(task.link);
       if (torrentBytes != null) {
+        final expected = task.link.torrentFilePath;
+        if (expected != null) {
+          List<String>? paths;
+          try {
+            paths = torrentFilePaths(torrentBytes);
+          } catch (_) {}
+          if (paths != null) {
+            final expectedName = p.basename(expected).toLowerCase();
+            final valid = fileIndex < paths.length &&
+                p.basename(paths[fileIndex]).toLowerCase() == expectedName;
+            if (!valid) {
+              final idx = paths.indexWhere(
+                  (f) => p.basename(f).toLowerCase() == expectedName);
+              if (idx < 0) {
+                final failed = current.copyWith(
+                  status: DownloadStatus.failed,
+                  error: 'File not found in torrent — the catalog may be out of date',
+                );
+                _activeTasks.remove(task.id);
+                await _db.updateDownload(failed);
+                _downloadController.add(failed);
+                _processQueue();
+                return;
+              }
+              fileIndex = idx;
+            }
+          }
+        }
         await _torrents.addTorrent(
           torrentBytes: torrentBytes,
           fileIndices: [fileIndex],
@@ -1118,6 +1172,18 @@ class DownloadService {
     final source = File(p.join(torrentSavePath, file.path));
     if (!await source.exists()) return;
 
+    final expectedPath = task.link.torrentFilePath;
+    if (expectedPath != null &&
+        p.basename(file.path).toLowerCase() !=
+            p.basename(expectedPath).toLowerCase()) {
+      await _failTorrentTask(
+        task,
+        'Torrent delivered "${p.basename(file.path)}" instead of '
+        '"${p.basename(expectedPath)}"',
+      );
+      return;
+    }
+
     final dest = await _storage.getDownloadPath(task.platform, task.link.filename);
     try {
       final destFile = File(dest);
@@ -1127,6 +1193,18 @@ class DownloadService {
       // Leaving the file in the torrent dir is recoverable; the user
       // can re-add the same task and we'll skip re-downloading thanks
       // to libtorrent's resume data.
+      return;
+    }
+
+    final copiedLength = await File(dest).length();
+    if (file.length > 0 && copiedLength != file.length) {
+      try {
+        await File(dest).delete();
+      } catch (_) {}
+      await _failTorrentTask(
+        task,
+        'Torrent data incomplete ($copiedLength of ${file.length} bytes)',
+      );
       return;
     }
 
@@ -1141,7 +1219,12 @@ class DownloadService {
         finalPath = await _extractArchive(dest, task.platform);
         await File(dest).delete();
       } catch (_) {
-        // Extraction failed — keep the downloaded file as-is.
+        await _failTorrentTask(
+          task,
+          'Extraction failed — the archive may be corrupt',
+        );
+
+        return;
       }
     }
 
@@ -1221,7 +1304,8 @@ class DownloadService {
     }
   }
 
-  Future<void> _failTorrentTask(DownloadTask task, String error, HostAdapter adapter) async {
+  Future<void> _failTorrentTask(DownloadTask task, String error,
+      [HostAdapter? adapter]) async {
     _activeTasks.remove(task.id);
     _torrentProgressSubs.remove(task.id)?.cancel();
     _torrentErrorSubs.remove(task.id)?.cancel();
@@ -1230,7 +1314,7 @@ class DownloadService {
       final failed = task.copyWith(status: DownloadStatus.failed, error: error);
       await _db.updateDownload(failed);
       _downloadController.add(failed);
-      adapter.onAuthFailure(task.link);
+      adapter?.onAuthFailure(task.link);
     }
     _processQueue();
   }
@@ -1444,7 +1528,38 @@ class DownloadService {
 
   Future<String> _extractArchive(String archivePath, String platform) async {
     final platformDir = await _storage.getPlatformDirectory(platform);
-    return _sevenZip.extract(archivePath, platformDir.path);
+    final baseName = p.basenameWithoutExtension(archivePath);
+    final tempDir = Directory(p.join(platformDir.path, '.extract-$baseName'));
+    if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    await tempDir.create(recursive: true);
+    try {
+      await _sevenZip.extract(archivePath, tempDir.path);
+      final entries = await tempDir.list().toList();
+      if (entries.isEmpty) throw Exception('Archive was empty');
+      if (entries.length == 1) {
+        final target = p.join(platformDir.path, p.basename(entries.first.path));
+        await _replaceEntity(entries.first, target);
+        await tempDir.delete(recursive: true);
+        return target;
+      }
+      final targetDir = Directory(p.join(platformDir.path, baseName));
+      if (await targetDir.exists()) await targetDir.delete(recursive: true);
+      await tempDir.rename(targetDir.path);
+      return targetDir.path;
+    } catch (_) {
+      try {
+        await tempDir.delete(recursive: true);
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  Future<void> _replaceEntity(FileSystemEntity entity, String target) async {
+    final file = File(target);
+    if (await file.exists()) await file.delete();
+    final dir = Directory(target);
+    if (await dir.exists()) await dir.delete(recursive: true);
+    await entity.rename(target);
   }
 
   Future<List<DownloadTask>> getAllDownloads() => _db.getAllDownloads();
