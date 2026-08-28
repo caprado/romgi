@@ -186,6 +186,22 @@ def test_minerva_source_skips_when_artefacts_missing(monkeypatch, tmp_path):
     assert out == []
 
 
+def test_minerva_source_derives_index_when_index_file_is_gone(monkeypatch, tmp_path):
+    """Upstream removed index.txt.gz; the path index comes from hashes.db."""
+    monkeypatch.setenv("MINERVA_HASHES_DB", str(DB_FIXTURE))
+    monkeypatch.delenv("MINERVA_INDEX_TXT", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    src = MinervaSource(_dummy_manifest())
+    cfg = _config_for("nes", [NES_PREFIX])
+    out = src.scrape("nes", cfg, BuildContext())
+    assert sorted(e["title"] for e in out) == [
+        "Legend of Zelda, The (USA)",
+        "Megaman 2 (USA)",
+        "Super Mario Bros. (USA)",
+    ]
+
+
 def test_minerva_source_uses_env_vars(monkeypatch):
     monkeypatch.setenv("MINERVA_HASHES_DB", str(DB_FIXTURE))
     monkeypatch.setenv("MINERVA_INDEX_TXT", str(INDEX_FIXTURE))

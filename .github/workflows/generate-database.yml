@@ -88,6 +88,20 @@ jobs:
           echo "ra_count=$RA_COUNT" >> $GITHUB_OUTPUT
           echo "schema_version=$SCHEMA_VERSION" >> $GITHUB_OUTPUT
 
+      - name: Refuse to publish a gutted catalog
+        run: |
+          OLD=$(python -c "import json; print(json.load(open('version.json'))['entries'])")
+          NEW=${{ steps.stats.outputs.entry_count }}
+          if [ "$NEW" -lt $((OLD * 7 / 10)) ]; then
+            echo "Entry count dropped from $OLD to $NEW - refusing to publish"
+            exit 1
+          fi
+          EMPTY=$(sqlite3 romdb.db "SELECT s.id FROM sources s WHERE NOT EXISTS (SELECT 1 FROM links l WHERE l.source_id = s.id)")
+          if [ -n "$EMPTY" ]; then
+            echo "Sources with zero links: $EMPTY - refusing to publish"
+            exit 1
+          fi
+
       - name: Create version.json
         run: |
           cat > version.json << EOF
