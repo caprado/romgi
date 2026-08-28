@@ -84,6 +84,22 @@ def test_parse_links_direct_url():
     assert links[0]['url'] == 'https://example.com/test.pkg'
 
 
+def test_parse_links_names_file_after_title():
+    links = parse_links(
+        _result(url='https://cdn.example.com/fSndUWIDQSWRWhQnmRat.pkg'),
+        _source(), 'ps3', 'https://nps.com',
+    )
+    assert links[0]['filename'] == 'Test Game.pkg'
+
+
+def test_parse_links_sanitizes_title_and_defaults_extension():
+    links = parse_links(
+        _result(name='Game: Redux?', url='https://cdn.example.com/tokenwithoutext'),
+        _source(), 'ps3', 'https://nps.com',
+    )
+    assert links[0]['filename'] == 'Game Redux.pkg'
+
+
 def test_parse_links_zero_size():
     links = parse_links(_result(size=''), _source(), 'ps3', 'https://nps.com')
     assert links[0]['size'] == 0
