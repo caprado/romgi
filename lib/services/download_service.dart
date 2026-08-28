@@ -840,7 +840,7 @@ class DownloadService {
       _lastDbUpdate.remove(task.id);
       _processQueue();
       return;
-    } catch (error, _) {
+    } catch (error) {
       final failedOver = await _tryFailover(updatedTask);
       if (!failedOver) {
         updatedTask = updatedTask.copyWith(
