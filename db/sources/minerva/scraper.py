@@ -3,9 +3,11 @@ MiNERVA source plugin.
 
 Reads two upstream artefacts the build pipeline mirrors locally:
 
-    data/minerva/index.txt   flat list of every path in the archive
     data/minerva/hashes.db   SQLite per-file metadata (magnet, so_id,
                              torrents, sha1, ...)
+    data/minerva/index.txt   optional flat list of every path; derived
+                             from hashes.db when absent (upstream
+                             removed the file in Aug 2026)
 
 For each platform's path prefix(es), join the index with hashes.db and
 emit one entry per ROM file. Each link carries the torrent infohash and
@@ -229,20 +231,11 @@ class MinervaSource:
             index_path = _resolve_artefact(ENV_INDEX_TXT, f'{DEFAULT_DATA_DIR}/index.txt')
         db_path = _resolve_artefact(ENV_HASHES_DB, f'{DEFAULT_DATA_DIR}/hashes.db')
 
-        if index_path is None or db_path is None:
+        if db_path is None:
             print(
-                f"  [minerva] artefacts missing "
-                f"(index_path={index_path}, db_path={db_path}); "
-                f"skipping. Set {ENV_INDEX_TXT}/{ENV_HASHES_DB} or place "
-                f"files under {DEFAULT_DATA_DIR}/."
+                f"  [minerva] hashes.db missing; skipping. Set "
+                f"{ENV_HASHES_DB} or place it under {DEFAULT_DATA_DIR}/."
             )
-            self._artefacts_unusable = True
-            return False
-
-        try:
-            self._index = _load_index(index_path)
-        except Exception as e:
-            print(f"  [minerva] index unreadable ({index_path}): {e}; skipping.")
             self._artefacts_unusable = True
             return False
 
@@ -262,6 +255,18 @@ class MinervaSource:
             )
             self._artefacts_unusable = True
             return False
+
+        if index_path is not None:
+            try:
+                self._index = _load_index(index_path)
+            except Exception as e:
+                print(f"  [minerva] index unreadable ({index_path}): {e}; deriving from hashes.db.")
+
+        if self._index is None:
+            self._index = [
+                row[0] for row in self._db.execute('SELECT full_path FROM files')
+            ]
+            print(f"  [minerva] index derived from hashes.db ({len(self._index):,} paths).")
 
         return True
 
