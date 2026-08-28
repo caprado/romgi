@@ -8,6 +8,7 @@ catalog DB on the GitHub raw mirror.
 import os
 import csv
 import io
+import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -37,6 +38,14 @@ PS3_RAPS_BASE_URL = f'{MAIN_SITE}/static/content/ps3/raps'
 
 PSV_ZRIFS_DIR = 'static/content/psv/zrifs'
 PSV_ZRIFS_BASE_URL = f'{MAIN_SITE}/static/content/psv/zrifs'
+
+
+def _title_filename(name: str, url: str) -> str:
+    """CDN URLs end in an opaque token; name the file after the title."""
+    token = url.rstrip('/').split('/')[-1]
+    ext = os.path.splitext(token)[1] or '.pkg'
+    safe = re.sub(r'[<>:"/\\|?*]', '', name).strip().rstrip('.')
+    return f'{safe}{ext}' if safe else token
 
 
 def create_rap_file(rap: str, filepath: str) -> None:
@@ -107,7 +116,7 @@ def parse_links(result: dict[str, Any], source: dict[str, Any], platform: str, b
         return links
 
     name = result['Name']
-    filename = url.rstrip('/').split('/')[-1]
+    filename = _title_filename(name, url)
     file_size_val = result.get('File Size', '')
     size = round(float(file_size_val)) if file_size_val and file_size_val.isdigit() else 0
     size_str = size_bytes_to_str(size) if size else '0B'
@@ -119,7 +128,7 @@ def parse_links(result: dict[str, Any], source: dict[str, Any], platform: str, b
             root = ET.fromstring(r.text)
             urls = [piece.attrib['url'] for piece in root.findall('pieces')]
             for i, url in enumerate(urls):
-                filename = url.rstrip('/').split('/')[-1]
+                filename = _title_filename(f'{name} (part {i})', url)
 
                 links.append({
                     'name': name,
