@@ -130,7 +130,8 @@ void main() {
     expect(result, isA<MetadataNoMatch>());
   });
 
-  test('devid params are omitted when no dev credentials are set', () async {
+  test('devid params are omitted when no dev credentials are built in',
+      () async {
     final stub = StubAdapter({
       _search: (_) => jsonBody(_response([_jeu()])),
     });
@@ -147,15 +148,20 @@ void main() {
     expect(query['softname'], 'romgi');
   });
 
-  test('devid params are sent when dev credentials are set', () async {
+  test('devid params come from build-time credentials, not user input',
+      () async {
     final stub = StubAdapter({
       _search: (_) => jsonBody(_response([_jeu()])),
     });
     final dio = stubbedDio(_base, stub.routes)..httpClientAdapter = stub;
-    await ScreenScraperProvider(dio: dio).fetch(
+    await ScreenScraperProvider(
+      dio: dio,
+      devId: 'dev',
+      devPassword: 'dummy-devpass',
+    ).fetch(
       title: 'Chrono Cross',
       platform: 'ps1',
-      creds: {..._creds, 'devId': 'dev', 'devPassword': 'dummy-devpass'},
+      creds: {..._creds, 'devId': 'ignored', 'devPassword': 'ignored'},
     );
 
     final query = stub.calls.single.uri.queryParameters;

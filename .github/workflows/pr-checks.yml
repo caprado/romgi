@@ -89,4 +89,7 @@ jobs:
       - run: flutter pub get
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: >
+          flutter build apk --debug
+          --dart-define=SCREENSCRAPER_DEV_ID=${{ secrets.SCREENSCRAPER_DEV_ID }}
+          --dart-define=SCREENSCRAPER_DEV_PASSWORD=${{ secrets.SCREENSCRAPER_DEV_PASSWORD }}
