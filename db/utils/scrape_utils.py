@@ -20,8 +20,10 @@ BROWSER_HEADERS = {
     'Upgrade-Insecure-Requests': '1'
 }
 
-# Sites that require Playwright (real browser) due to TLS fingerprinting
-PLAYWRIGHT_REQUIRED_HOSTS = ['repo.mariocube.com']
+# Sites that require Playwright (real browser) due to TLS fingerprinting.
+# repo.mariocube.com flipped: Cloudflare now challenges headless Chromium
+# but passes cloudscraper, so it uses the default path again.
+PLAYWRIGHT_REQUIRED_HOSTS = []
 
 # Rate limiting settings
 MAX_RETRIES = 5

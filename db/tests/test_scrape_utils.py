@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import utils.scrape_utils as scrape_utils
 from utils.scrape_utils import (
     _needs_playwright,
     close_browser,
@@ -88,8 +89,9 @@ def test_fetch_url_with_existing_session(tmp_cache_dir):
 
 
 def test_fetch_url_playwright_route(tmp_cache_dir):
-    url = f'https://{PLAYWRIGHT_REQUIRED_HOSTS[0]}/page'
-    with patch('utils.scrape_utils._fetch_with_playwright', return_value='<html>pw</html>') as mock_pw:
+    url = 'https://pw-only.example.com/page'
+    with patch.object(scrape_utils, 'PLAYWRIGHT_REQUIRED_HOSTS', ['pw-only.example.com']), \
+            patch('utils.scrape_utils._fetch_with_playwright', return_value='<html>pw</html>') as mock_pw:
         result = fetch_url(url)
         assert result == '<html>pw</html>'
         mock_pw.assert_called_once_with(url)
