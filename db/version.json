@@ -1,13 +1,13 @@
 {
-  "version": "20260830",
-  "generated_at": "2026-08-30T04:22:25Z",
+  "version": "20260904",
+  "generated_at": "2026-09-04T14:44:51Z",
   "schema_version": 4,
   "min_app_version": "1.2.0",
-  "size": 55463269,
-  "uncompressed_size": 345907200,
-  "entries": 241132,
-  "links": 400397,
+  "size": 55460831,
+  "uncompressed_size": 345952256,
+  "entries": 241122,
+  "links": 400410,
   "platforms": 50,
   "sources": 4,
-  "retroachievements": 9584
+  "retroachievements": 9675
 }
