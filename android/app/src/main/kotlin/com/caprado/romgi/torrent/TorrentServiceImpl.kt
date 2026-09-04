@@ -6,6 +6,7 @@ import android.os.Looper
 import android.util.Log
 import org.libtorrent4j.AddTorrentParams
 import org.libtorrent4j.AlertListener
+import org.libtorrent4j.AnnounceEntry
 import org.libtorrent4j.Priority
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
@@ -38,6 +39,15 @@ import java.util.concurrent.TimeUnit
  * One session per app process. [start] is idempotent.
  */
 private const val TAG = "TorrentService"
+
+// Announced in addition to whatever the torrent carries; helps thin
+// swarms and magnets with sparse tracker lists. DHT covers the rest.
+private val DEFAULT_TRACKERS = listOf(
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://exodus.desync.com:6969/announce",
+)
 
 class TorrentServiceImpl(
     @Suppress("unused") private val context: Context,
@@ -156,6 +166,9 @@ class TorrentServiceImpl(
         }
 
         knownInfohashes += infohash
+        handle?.let { h ->
+            DEFAULT_TRACKERS.forEach { h.addTracker(AnnounceEntry(it)) }
+        }
         if (request.fileIndices.isNotEmpty()) {
             pendingPriorities[infohash] = request.fileIndices
         }
