@@ -584,6 +584,10 @@ class DownloadService {
       // Retry logic for transient SSL/connection errors
       const maxRetries = 3;
       var retryCount = 0;
+      // Catalog sizes can be approximations (IA lists human-readable
+      // sizes), so completion is verified against the server's
+      // Content-Length instead.
+      var serverExpectedSize = 0;
       while (true) {
         try {
           // IA redirects downloads to CDN nodes (e.g. dn721009.ca.archive.org).
@@ -621,6 +625,9 @@ class DownloadService {
               final actualReceived = resumeOffset + received;
               final actualTotal =
                   total > 0 ? resumeOffset + total : task.link.size;
+              if (total > 0) {
+                serverExpectedSize = resumeOffset + total;
+              }
               final progress =
                   actualTotal > 0 ? actualReceived / actualTotal : 0.0;
 
@@ -697,13 +704,13 @@ class DownloadService {
       }
 
       final finalSize = await File(downloadPath).length();
-      if (task.link.size > 0 && finalSize != task.link.size) {
+      if (serverExpectedSize > 0 && finalSize != serverExpectedSize) {
         try {
           await File(downloadPath).delete();
         } catch (_) {}
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.failed,
-          error: 'Download incomplete ($finalSize of ${task.link.size} bytes)',
+          error: 'Download incomplete ($finalSize of $serverExpectedSize bytes)',
         );
         await _db.updateDownload(updatedTask);
         _downloadController.add(updatedTask);
