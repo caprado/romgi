@@ -7,8 +7,12 @@ import 'screenscraper_systems.dart';
 
 // ScreenScraper returns errors as HTTP 200 plain text, not JSON.
 class ScreenScraperProvider extends GameMetadataProvider {
-  ScreenScraperProvider({Dio? dio})
-      : _dio = dio ??
+  ScreenScraperProvider({Dio? dio, String? devId, String? devPassword})
+      : _devId =
+            devId ?? const String.fromEnvironment('SCREENSCRAPER_DEV_ID'),
+        _devPassword = devPassword ??
+            const String.fromEnvironment('SCREENSCRAPER_DEV_PASSWORD'),
+        _dio = dio ??
             Dio(BaseOptions(
               baseUrl: 'https://api.screenscraper.fr/api2',
               connectTimeout: const Duration(seconds: 10),
@@ -17,6 +21,8 @@ class ScreenScraperProvider extends GameMetadataProvider {
             ));
 
   final Dio _dio;
+  final String _devId;
+  final String _devPassword;
 
   @override
   MetadataProviderInfo get info => const MetadataProviderInfo(
@@ -28,21 +34,12 @@ class ScreenScraperProvider extends GameMetadataProvider {
   List<CredentialField> get credentialFields => const [
         CredentialField(key: 'username', label: 'Username'),
         CredentialField(key: 'password', label: 'Password', obscure: true),
-        CredentialField(key: 'devId', label: 'Dev ID', optional: true),
-        CredentialField(
-          key: 'devPassword',
-          label: 'Dev password',
-          obscure: true,
-          optional: true,
-        ),
       ];
 
   Map<String, Object> _authParams(Map<String, String> creds) {
-    final devId = creds['devId']?.trim() ?? '';
-    final devPassword = creds['devPassword']?.trim() ?? '';
     return {
-      if (devId.isNotEmpty) 'devid': devId,
-      if (devPassword.isNotEmpty) 'devpassword': devPassword,
+      if (_devId.isNotEmpty) 'devid': _devId,
+      if (_devPassword.isNotEmpty) 'devpassword': _devPassword,
       'softname': 'romgi',
       'output': 'json',
       'ssid': creds['username']?.trim() ?? '',
