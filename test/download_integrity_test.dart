@@ -377,8 +377,15 @@ void main() {
       expect(!file.existsSync() || file.lengthSync() != 1500, isTrue);
     });
 
-    test('wrong-size response body fails instead of completing', () async {
-      http.routes['*'] = (_) => ResponseBody.fromString('nope', 200);
+    test('body shorter than Content-Length fails instead of completing',
+        () async {
+      http.routes['*'] = (_) => ResponseBody.fromString(
+            'nope',
+            200,
+            headers: {
+              Headers.contentLengthHeader: ['1000'],
+            },
+          );
       final task = _task('t1', _httpLink('Game.chd', size: 1000));
 
       final result = await run(task);
@@ -386,6 +393,23 @@ void main() {
       expect(result.status, DownloadStatus.failed);
       expect(result.error, contains('incomplete'));
       expect(File(p.join(platformDir.path, 'Game.chd')).existsSync(), isFalse);
+    });
+
+    test('approximate catalog size completes when Content-Length matches',
+        () async {
+      http.routes['*'] = (_) => ResponseBody.fromString(
+            'nope',
+            200,
+            headers: {
+              Headers.contentLengthHeader: ['4'],
+            },
+          );
+      final task = _task('t1', _httpLink('Game.chd', size: 1000));
+
+      final result = await run(task);
+
+      expect(result.status, DownloadStatus.completed);
+      expect(File(p.join(platformDir.path, 'Game.chd')).lengthSync(), 4);
     });
 
     test('extraction failure fails the task and keeps the archive', () async {
