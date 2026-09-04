@@ -121,19 +121,9 @@ The built APK will be located at `build/app/outputs/flutter-apk/app-release.apk`
 
 Release builds are filtered to **arm64-v8a** to keep the APK size sane after bundling the BitTorrent runtime. Every modern Android phone and retro handheld is arm64. To produce a 4-ABI build, edit `abiFilters` in `android/app/build.gradle.kts`.
 
-### Rebuild the catalog database (optional)
+### The catalog database
 
-The app pulls a pre-built SQLite catalog from this repo. CI rebuilds it weekly. If you want to run the build locally:
-
-```bash
-cd db
-pip install -r requirements.txt
-python workflow.py                  # full rebuild
-python workflow.py --use-cached     # reuse cached HTTP responses
-python workflow.py --skip-minerva   # skip the ~1.7 GB MiNERVA mirror download
-```
-
-Output is `db/romdb.db`. Adding a new source = drop a folder under `db/sources/<id>/` with `source.yml` + `scraper.py` and add the platform routes in `db/platforms.yml`.
+The app pulls a pre-built SQLite catalog from this repo, updated weekly. `db/CATALOG.md` documents the artifact format. The catalog is provided for use in romgi; forks and derivative tools are not supported.
 
 ## Technical Details
 
