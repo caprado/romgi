@@ -1,0 +1,87 @@
+name: Probe MarioCube
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Plain curl
+        continue-on-error: true
+        run: |
+          curl -s -o /dev/null -w "plain curl: %{http_code}\n" --max-time 30 "https://repo.mariocube.com/DSiWare/NDS/A/" || echo "plain curl: connection failed"
+
+      - name: Browser-header curl
+        continue-on-error: true
+        run: |
+          curl -s -o /dev/null -w "browser curl: %{http_code}\n" --max-time 30 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml" \
+            "https://repo.mariocube.com/DSiWare/NDS/A/" || echo "browser curl: connection failed"
+
+      - name: cloudscraper
+        continue-on-error: true
+        run: |
+          pip -q install cloudscraper
+          python - <<'EOF'
+          import cloudscraper
+          s = cloudscraper.create_scraper()
+          try:
+              r = s.get("https://repo.mariocube.com/DSiWare/NDS/A/", timeout=30)
+              print(f"cloudscraper: {r.status_code}, {len(r.text)} bytes")
+          except Exception as e:
+              print(f"cloudscraper: {e}")
+          EOF
+
+      - name: curl_cffi chrome impersonation
+        continue-on-error: true
+        run: |
+          pip -q install curl_cffi
+          python - <<'EOF'
+          from curl_cffi import requests
+          try:
+              r = requests.get("https://repo.mariocube.com/DSiWare/NDS/A/", impersonate="chrome", timeout=30)
+              print(f"curl_cffi: {r.status_code}, {len(r.text)} bytes")
+          except Exception as e:
+              print(f"curl_cffi: {e}")
+          EOF
+
+      - name: Playwright chromium
+        continue-on-error: true
+        run: |
+          pip -q install playwright
+          python -m playwright install chromium --with-deps > /dev/null 2>&1
+          python - <<'EOF'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+              try:
+                  resp = page.goto("https://repo.mariocube.com/DSiWare/NDS/A/", wait_until="domcontentloaded", timeout=60000)
+                  print(f"playwright: {resp.status if resp else 'no response'}, title={page.title()!r}")
+                  page.wait_for_timeout(8000)
+                  print(f"playwright after wait: title={page.title()!r}, {len(page.content())} bytes")
+              except Exception as e:
+                  print(f"playwright: {e}")
+              browser.close()
+          EOF
+
+      - name: curl through Cloudflare WARP
+        continue-on-error: true
+        run: |
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get -qq update && sudo apt-get -qq install -y cloudflare-warp
+          sudo systemctl start warp-svc || true
+          sleep 3
+          warp-cli --accept-tos registration new
+          warp-cli --accept-tos mode warp
+          warp-cli --accept-tos connect
+          sleep 8
+          curl -s --max-time 30 "https://www.cloudflare.com/cdn-cgi/trace" | grep -E "warp|ip"
+          curl -s -o /dev/null -w "warp curl: %{http_code}\n" --max-time 30 "https://repo.mariocube.com/DSiWare/NDS/A/" || echo "warp curl: connection failed"
+          curl -s -o /dev/null -w "warp browser curl: %{http_code}\n" --max-time 30 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
+            "https://repo.mariocube.com/DSiWare/NDS/A/" || echo "warp browser curl: connection failed"
