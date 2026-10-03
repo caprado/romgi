@@ -7,7 +7,9 @@ import android.util.Log
 import org.libtorrent4j.AddTorrentParams
 import org.libtorrent4j.AlertListener
 import org.libtorrent4j.AnnounceEntry
+import org.libtorrent4j.ErrorCode
 import org.libtorrent4j.Priority
+import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SettingsPack
@@ -15,16 +17,21 @@ import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.TorrentStatus
+import org.libtorrent4j.Vectors
 import org.libtorrent4j.alerts.Alert
 import org.libtorrent4j.alerts.AlertType
 import org.libtorrent4j.alerts.ListenFailedAlert
 import org.libtorrent4j.alerts.ListenSucceededAlert
 import org.libtorrent4j.alerts.MetadataReceivedAlert
+import org.libtorrent4j.alerts.SaveResumeDataAlert
+import org.libtorrent4j.alerts.SaveResumeDataFailedAlert
 import org.libtorrent4j.alerts.TorrentErrorAlert
 import org.libtorrent4j.alerts.TorrentFinishedAlert
 import org.libtorrent4j.alerts.TrackerAnnounceAlert
 import org.libtorrent4j.alerts.TrackerErrorAlert
 import org.libtorrent4j.alerts.TrackerReplyAlert
+import org.libtorrent4j.swig.error_code
+import org.libtorrent4j.swig.libtorrent
 import io.flutter.plugin.common.BinaryMessenger
 import java.io.File
 import java.util.Collections
@@ -40,6 +47,9 @@ import java.util.concurrent.TimeUnit
  */
 private const val TAG = "TorrentService"
 
+// emitProgressSnapshot runs at 1 Hz; persist resume data every 30 s.
+private const val RESUME_SAVE_EVERY_TICKS = 30
+
 // Announced in addition to whatever the torrent carries; helps thin
 // swarms and magnets with sparse tracker lists. DHT covers the rest.
 private val DEFAULT_TRACKERS = listOf(
@@ -50,7 +60,7 @@ private val DEFAULT_TRACKERS = listOf(
 )
 
 class TorrentServiceImpl(
-    @Suppress("unused") private val context: Context,
+    private val context: Context,
     binaryMessenger: BinaryMessenger,
 ) : TorrentHostApi {
 
@@ -64,6 +74,13 @@ class TorrentServiceImpl(
     // when MetadataReceivedAlert fires.
     private val pendingPriorities: MutableMap<String, List<Long>> =
         ConcurrentHashMap()
+
+    // Bencoded fastresume per torrent so a restart re-attaches to the
+    // half-finished download instead of re-hashing everything on disk.
+    private val resumeDir: File by lazy {
+        File(context.filesDir, "torrent_resume").apply { mkdirs() }
+    }
+    private var resumeSaveTick = 0
 
     private val pollingExecutor: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { r ->
@@ -99,7 +116,15 @@ class TorrentServiceImpl(
             val initThread = Thread({
                 try {
                     sm.addListener(alertListener)
-                    sm.start(SessionParams(buildSettingsPack(settings)))
+                    // libtorrent 2.x defaults to mmap disk I/O, which maps
+                    // whole payload files into the process. Android counts
+                    // mapped pages toward RSS, so a multi-GB torrent makes
+                    // lmkd kill background apps and eventually us. The
+                    // posix backend does plain pread/pwrite with bounded
+                    // buffers.
+                    val sessionParams = SessionParams(buildSettingsPack(settings))
+                    sessionParams.setPosixDiskIO()
+                    sm.start(sessionParams)
                     // SessionManager.start() unconditionally applies a
                     // 2 MiB max_metadata_size. Re-apply our settings
                     // afterwards so our 32 MiB ceiling sticks.
@@ -138,32 +163,44 @@ class TorrentServiceImpl(
         val saveDir = File(requireNotNull(currentSettings).savePath).apply { mkdirs() }
 
         val infohash: String
-        val handle: TorrentHandle?
+        val freshParams: AddTorrentParams
 
         val magnet = request.magnet
         val bytes = request.torrentBytes
 
         when {
             magnet != null && magnet.isNotBlank() -> {
-                val parsed = AddTorrentParams.parseMagnetUri(magnet)
-                infohash = parsed.infoHashes.v1.toHex().lowercase()
-                if (sm.find(Sha1Hash.parseHex(infohash)) == null) {
-                    sm.download(magnet, saveDir, org.libtorrent4j.swig.torrent_flags_t())
-                }
-                handle = sm.find(Sha1Hash.parseHex(infohash))
+                freshParams = AddTorrentParams.parseMagnetUri(magnet)
+                infohash = freshParams.infoHashes.v1.toHex().lowercase()
             }
             bytes != null && bytes.isNotEmpty() -> {
                 val info = TorrentInfo.bdecode(bytes)
                 infohash = info.infoHash().toHex().lowercase()
-                if (sm.find(Sha1Hash.parseHex(infohash)) == null) {
-                    sm.download(info, saveDir)
-                }
-                handle = sm.find(Sha1Hash.parseHex(infohash))
+                freshParams = AddTorrentParams().apply { torrentInfo = info }
             }
             else -> throw IllegalArgumentException(
                 "AddTorrentRequest needs either a magnet or torrentBytes"
             )
         }
+
+        if (sm.find(Sha1Hash.parseHex(infohash)) == null) {
+            // Prefer saved resume data: it carries piece state, so a
+            // restart does a quick checking_resume instead of
+            // re-hashing (or re-fetching metadata for) everything.
+            val params = loadResumeData(infohash) ?: freshParams
+            if (params !== freshParams && params.torrentInfo == null &&
+                bytes != null && bytes.isNotEmpty()
+            ) {
+                params.torrentInfo = TorrentInfo.bdecode(bytes)
+            }
+            params.savePath = saveDir.absolutePath
+            val ec = ErrorCode(error_code())
+            SessionHandle(sm.swig()).addTorrent(params, ec)
+            if (ec.isError) {
+                Log.w(TAG, "addTorrent error infohash=$infohash msg=${ec.message}")
+            }
+        }
+        val handle: TorrentHandle? = sm.find(Sha1Hash.parseHex(infohash))
 
         knownInfohashes += infohash
         handle?.let { h ->
@@ -192,6 +229,8 @@ class TorrentServiceImpl(
         // Partial files stay on disk so the user can resume by re-adding.
         sm.remove(handle)
         knownInfohashes -= infohash
+        pendingPriorities.remove(infohash)
+        resumeFile(infohash).delete()
     }
 
     @Synchronized
@@ -231,6 +270,7 @@ class TorrentServiceImpl(
                     // finish so we don't upload after the user's file
                     // is in their library.
                     val a = alert as TorrentFinishedAlert
+                    a.handle().saveResumeData(TorrentHandle.SAVE_INFO_DICT)
                     a.handle().pause()
                 }
                 AlertType.TORRENT_ERROR -> {
@@ -246,8 +286,31 @@ class TorrentServiceImpl(
                     val a = alert as MetadataReceivedAlert
                     val ih = a.handle().infoHash().toHex().lowercase()
                     Log.i(TAG, "metadata received infohash=$ih")
+                    // Persist the info dict now so a magnet add can
+                    // restart without re-fetching metadata.
+                    a.handle().saveResumeData(TorrentHandle.SAVE_INFO_DICT)
                     val wanted = pendingPriorities.remove(ih) ?: return
                     applyFilePriorities(a.handle(), wanted)
+                }
+                AlertType.SAVE_RESUME_DATA -> {
+                    val a = alert as SaveResumeDataAlert
+                    val ih = a.handle().infoHash().toHex().lowercase()
+                    try {
+                        val data = AddTorrentParams.writeResumeDataBuf(a.params())
+                        val f = resumeFile(ih)
+                        val tmp = File(f.path + ".tmp")
+                        tmp.writeBytes(data)
+                        if (!tmp.renameTo(f)) {
+                            f.delete()
+                            tmp.renameTo(f)
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "resume write failed infohash=$ih", t)
+                    }
+                }
+                AlertType.SAVE_RESUME_DATA_FAILED -> {
+                    val a = alert as SaveResumeDataFailedAlert
+                    Log.w(TAG, "save resume failed: ${a.error().message}")
                 }
                 AlertType.TRACKER_ANNOUNCE -> {
                     val a = alert as TrackerAnnounceAlert
@@ -280,6 +343,15 @@ class TorrentServiceImpl(
     @Synchronized
     private fun emitProgressSnapshot() {
         val sm = session ?: return
+        if (++resumeSaveTick >= RESUME_SAVE_EVERY_TICKS) {
+            resumeSaveTick = 0
+            for (ih in knownInfohashes.toList()) {
+                val h = sm.find(Sha1Hash.parseHex(ih)) ?: continue
+                if (h.isValid && h.needSaveResumeData()) {
+                    h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+                }
+            }
+        }
         for (ih in knownInfohashes.toList()) {
             val handle = sm.find(Sha1Hash.parseHex(ih)) ?: continue
             val progress = try {
@@ -360,6 +432,30 @@ class TorrentServiceImpl(
     private fun requireSession(): SessionManager =
         session ?: error("TorrentService not started. Call start() first.")
 
+    private fun resumeFile(infohash: String) = File(resumeDir, "$infohash.fastresume")
+
+    private fun loadResumeData(infohash: String): AddTorrentParams? {
+        val f = resumeFile(infohash)
+        if (!f.exists()) return null
+        return try {
+            val ec = error_code()
+            val p = libtorrent.read_resume_data_ex(
+                Vectors.bytes2byte_vector(f.readBytes()), ec
+            )
+            if (ec.value() != 0) {
+                Log.w(TAG, "bad resume data for $infohash: ${ec.message()}")
+                f.delete()
+                null
+            } else {
+                AddTorrentParams(p)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "resume load failed for $infohash", t)
+            f.delete()
+            null
+        }
+    }
+
     private fun buildSettingsPack(s: TorrentSettings): SettingsPack {
         val pack = SettingsPack()
             .connectionsLimit(s.maxConnections.toInt())
@@ -384,6 +480,26 @@ class TorrentServiceImpl(
         pack.setInteger(
             org.libtorrent4j.swig.settings_pack.int_types.max_metadata_size.swigValue(),
             32 * 1024 * 1024,
+        )
+        // Bound disk-side memory on mobile. The posix disk backend set
+        // at session start avoids mmap entirely; these cap the rest:
+        // queued write buffers throttle peers instead of growing the
+        // heap when flash can't keep up, 2 hasher threads keep
+        // checking off the UI's cores, and the file pool bounds fds on
+        // multi-thousand-file archive.org torrents. The mmap cutoff is
+        // belt-and-braces in case the default backend ever comes back.
+        pack.maxQueuedDiskBytes(1 * 1024 * 1024)
+        pack.setInteger(
+            org.libtorrent4j.swig.settings_pack.int_types.aio_threads.swigValue(),
+            2,
+        )
+        pack.setInteger(
+            org.libtorrent4j.swig.settings_pack.int_types.file_pool_size.swigValue(),
+            40,
+        )
+        pack.setInteger(
+            org.libtorrent4j.swig.settings_pack.int_types.mmap_file_size_cutoff.swigValue(),
+            Int.MAX_VALUE,
         )
         // Disable UPnP / NAT-PMP / LSD on Android. They all bind to
         // multicast sockets, which requires CHANGE_WIFI_MULTICAST_STATE
