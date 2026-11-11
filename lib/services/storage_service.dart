@@ -176,6 +176,13 @@ class StorageService {
     }
   }
 
+  /// Completed downloads can point to a file or an extraction directory.
+  Future<bool> downloadPathExists(String path) async {
+    final type = await FileSystemEntity.type(path);
+    return type == FileSystemEntityType.file ||
+        type == FileSystemEntityType.directory;
+  }
+
   Future<bool> fileExists(String path) async {
     return File(path).exists();
   }
