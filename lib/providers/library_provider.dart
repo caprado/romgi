@@ -11,7 +11,7 @@ class LibraryState {
   final String? selectedPlatform;
   final String searchQuery;
   final bool isLoading;
-  final Set<String> verifiedFiles; // Files that exist on disk
+  final Set<String> verifiedFiles; // Download paths that exist on disk
 
   const LibraryState({
     this.items = const [],
@@ -88,13 +88,13 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
     final completed = await _db.getCompletedDownloads();
 
-    // Verify which files still exist
+    // Verify files and extraction directories
     final verified = <String>{};
     for (final item in completed) {
       final path = item.filePath;
       if (path != null) {
         try {
-          if (await File(path).exists()) {
+          if (await _storage.downloadPathExists(path)) {
             verified.add(path);
           }
         } catch (e) {
@@ -137,16 +137,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(isLoading: true);
 
     final verified = <String>{};
-    final itemsToRemove = <String>[];
 
     for (final item in state.items) {
-      if (item.filePath != null) {
-        if (await File(item.filePath!).exists()) {
-          verified.add(item.filePath!);
-        } else {
-          // File is missing - mark for potential cleanup
-          itemsToRemove.add(item.id);
-        }
+      final path = item.filePath;
+      if (path == null) continue;
+      try {
+        if (await _storage.downloadPathExists(path)) verified.add(path);
+      } on FileSystemException {
+        // An inaccessible path cannot be verified.
       }
     }
 
@@ -156,9 +154,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   /// Remove entries for missing files
   Future<void> cleanupMissingFiles() async {
     for (final item in state.items) {
-      if (item.filePath != null &&
-          !state.verifiedFiles.contains(item.filePath)) {
-        await _db.deleteDownload(item.id);
+      final path = item.filePath;
+      if (path == null) continue;
+      try {
+        if (!await _storage.downloadPathExists(path)) {
+          await _db.deleteDownload(item.id);
+        }
+      } on FileSystemException {
+        // Keep the record when storage cannot be checked.
       }
     }
     await refresh();

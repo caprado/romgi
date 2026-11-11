@@ -375,8 +375,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       return;
     }
 
-    final file = File(item.filePath!);
-    if (!await file.exists()) {
+    final storage = ref.read(storageServiceProvider);
+    if (!await storage.downloadPathExists(item.filePath!)) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -385,7 +385,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       return;
     }
 
-    // Show file info dialog with Open with option
+    final isFile = await File(item.filePath!).exists();
+    // Directories have useful path information but cannot use the file chooser.
     if (mounted) {
       showDialog(
         context: context,
@@ -418,25 +419,29 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Close'),
             ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                try {
-                  await _openChannel.invokeMethod<void>(
-                    'openWithChooser',
-                    {'path': item.filePath},
-                  );
-                } on PlatformException catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Could not open file: ${e.message ?? e.code}')),
-                    );
+            if (isFile)
+              FilledButton.icon(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  try {
+                    await _openChannel.invokeMethod<void>('openWithChooser', {
+                      'path': item.filePath,
+                    });
+                  } on PlatformException catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Could not open file: ${e.message ?? e.code}',
+                          ),
+                        ),
+                      );
+                    }
                   }
-                }
-              },
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Open with...'),
-            ),
+                },
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open with...'),
+              ),
           ],
         ),
       );
