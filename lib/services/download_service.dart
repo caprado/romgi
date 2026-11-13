@@ -69,6 +69,7 @@ class DownloadService {
   final Set<String> _pausedTaskIds = {};
   DateTime? _lastNotificationUpdate;
   bool _isProcessingQueue = false;
+  bool _queueRerun = false;
 
   final Map<String, int> _lastBytesReceived = {};
   final Map<String, DateTime> _lastSpeedUpdate = {};
@@ -329,7 +330,10 @@ class DownloadService {
       _playlistWriter.maybeWritePlaylist(task);
 
   Future<void> _processQueue() async {
-    if (_isProcessingQueue) return;
+    if (_isProcessingQueue) {
+      _queueRerun = true;
+      return;
+    }
 
     _isProcessingQueue = true;
 
@@ -372,6 +376,10 @@ class DownloadService {
       }
     } finally {
       _isProcessingQueue = false;
+      if (_queueRerun) {
+        _queueRerun = false;
+        _processQueue();
+      }
     }
   }
 
@@ -431,32 +439,27 @@ class DownloadService {
 
     if (adapter.isTorrent) {
       final prefs = getLinkResolverPrefs();
-      final debrid = _debrid;
-      if (prefs.debridEnabled && debrid != null) {
-        if (await debrid.isConfigured()) {
-          final resolved = await _tryResolveViaDebrid(task);
-          // Task may have been canceled/paused during the resolution poll
-          if (!_activeTasks.containsKey(task.id)) return;
-          if (resolved != null) {
-            // Re-enter with a plain HTTP link — adapterFor() now routes to HTTP.
-            await _startDownload(resolved);
-            return;
-          }
-          // Attempted but not resolved. If P2P is off there's nowhere to go.
-          if (prefs.torrentsDisabled) {
-            await _failTask(
-              task,
-              'Not cached on debrid and torrents are disabled',
-            );
-            return;
-          }
-        } else if (prefs.torrentsDisabled) {
-          await _failTask(
-            task,
-            'Debrid is enabled but no API key is saved for the selected provider',
-          );
+      // Never fall back to P2P on our own: once debrid is on, P2P only runs
+      // after the user approves it for this task.
+      if (prefs.debridEnabled && !task.p2pApproved) {
+        final resolved = await _tryResolveViaDebrid(task);
+        if (!_activeTasks.containsKey(task.id)) return;
+        if (resolved.task != null) {
+          await _startDownload(resolved.task!);
           return;
         }
+        if (resolved.failure != null) {
+          await _failTask(
+            task,
+            resolved.failure!,
+            needsP2pApproval: !prefs.torrentsDisabled,
+          );
+        }
+        return;
+      }
+      if (prefs.torrentsDisabled) {
+        await _failTask(task, 'Torrents are disabled');
+        return;
       }
       await _startTorrentDownload(task, adapter);
       return;
@@ -878,10 +881,10 @@ class DownloadService {
 
   /// Try to turn a torrent [task] into an HTTP download via the configured
   /// debrid provider. Shows "Resolving/Caching on debrid…" while polling.
-  /// Returns null to fall back to P2P, or to abort after cancel/pause.
-  Future<DownloadTask?> _tryResolveViaDebrid(DownloadTask task) async {
+  Future<({DownloadTask? task, String? failure})> _tryResolveViaDebrid(
+      DownloadTask task) async {
     final debrid = _debrid;
-    if (debrid == null) return null;
+    if (debrid == null) return (task: null, failure: 'Debrid is unavailable');
 
     final cancelToken = CancelToken();
     _activeCancelTokens[task.id] = cancelToken;
@@ -895,7 +898,7 @@ class DownloadService {
     _downloadController.add(working);
     await _startForegroundTask(task.title);
 
-    final httpLink = await debrid.resolveTorrentLink(
+    final resolution = await debrid.resolveTorrentLink(
       task.link,
       isCancelled: () =>
           cancelToken.isCancelled || !_activeTasks.containsKey(task.id),
@@ -915,17 +918,19 @@ class DownloadService {
       _activeCancelTokens.remove(task.id);
     }
 
-    if (httpLink == null) return null;
+    final httpLink = resolution.link;
+    if (httpLink == null) return (task: null, failure: resolution.failure);
     // Canceled/paused while the provider was finishing — discard the link
     if (cancelToken.isCancelled || !_activeTasks.containsKey(task.id)) {
-      return null;
+      return (task: null, failure: null);
     }
-    return task.copyWith(
+    final resolved = task.copyWith(
       link: httpLink,
       status: DownloadStatus.pending,
       resolvingDebrid: false,
       progress: 0,
     );
+    return (task: resolved, failure: null);
   }
 
   Future<void> _completeHttpDownload(DownloadTask task, String downloadPath) async {
@@ -968,8 +973,17 @@ class DownloadService {
     await _maybeWritePlaylist(updatedTask);
   }
 
-  Future<void> _failTask(DownloadTask task, String error) async {
-    final failed = task.copyWith(status: DownloadStatus.failed, error: error);
+  Future<void> _failTask(
+    DownloadTask task,
+    String error, {
+    bool needsP2pApproval = false,
+  }) async {
+    final failed = task.copyWith(
+      status: DownloadStatus.failed,
+      error: error,
+      resolvingDebrid: false,
+      needsP2pApproval: needsP2pApproval,
+    );
     _activeTasks.remove(task.id);
     _activeCancelTokens.remove(task.id);
     await _db.updateDownload(failed);
@@ -1490,6 +1504,22 @@ class DownloadService {
     return _db.getVisibleCompletedDownloads();
   }
 
+  /// Re-queue a task whose debrid lookup failed, this time over P2P.
+  Future<void> downloadViaTorrent(String id) async {
+    final task = await _db.getDownload(id);
+    if (task == null || !task.needsP2pApproval) return;
+    final updated = task.copyWith(
+      status: DownloadStatus.pending,
+      progress: 0,
+      p2pApproved: true,
+      needsP2pApproval: false,
+      error: null,
+    );
+    await _db.updateDownload(updated);
+    _downloadController.add(updated);
+    _processQueue();
+  }
+
   Future<void> retryDownload(String id) async {
     final task = await _db.getDownload(id);
     if (task != null && task.status == DownloadStatus.failed) {
@@ -1520,6 +1550,8 @@ class DownloadService {
         downloadedBytes: 0,
         totalBytes: 0,
         error: null,
+        p2pApproved: false,
+        needsP2pApproval: false,
       );
       await _db.updateDownload(updated);
       _downloadController.add(updated);

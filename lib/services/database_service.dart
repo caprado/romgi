@@ -6,7 +6,7 @@ import '../models/models.dart';
 class DatabaseService {
   static Database? _database;
   static const String _dbName = 'romgi.db';
-  static const int _dbVersion = 8;
+  static const int _dbVersion = 9;
 
   Future<Database> get database async {
     _database ??= await _initDatabase();
@@ -115,6 +115,15 @@ class DatabaseService {
         )
       ''');
     }
+
+    if (oldVersion < 9) {
+      await db.execute(
+        'ALTER TABLE downloads ADD COLUMN p2p_approved INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE downloads ADD COLUMN needs_p2p_approval INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -152,7 +161,9 @@ class DatabaseService {
         group_id TEXT,
         group_index INTEGER,
         group_title TEXT,
-        group_total INTEGER
+        group_total INTEGER,
+        p2p_approved INTEGER NOT NULL DEFAULT 0,
+        needs_p2p_approval INTEGER NOT NULL DEFAULT 0
       )
     ''');
 

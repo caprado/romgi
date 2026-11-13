@@ -255,6 +255,10 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     await refresh();
   }
 
+  Future<void> downloadViaTorrent(String id) async {
+    await _service.downloadViaTorrent(id);
+  }
+
   Future<void> retryDownload(String id) async {
     await _service.retryDownload(id);
     await refresh();
@@ -287,13 +291,11 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
 ) {
   final service = ref.watch(downloadServiceProvider);
   final settings = ref.watch(settingsProvider);
-  final debridService = ref.watch(debridServiceProvider);
   service.shouldExtractForPlatform =
       (platform) => settings.shouldExtractForPlatform(platform);
   service.getLinkResolverPrefs = () => LinkResolverPrefs(
         torrentsDisabled: settings.torrentsDisabled,
-        debridEnabled:
-            settings.debridEnabled && debridService.isConfiguredSync(),
+        debridEnabled: settings.debridEnabled,
       );
   final notifier = DownloadNotifier(
     service,

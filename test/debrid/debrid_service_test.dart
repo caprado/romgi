@@ -71,7 +71,7 @@ void main() {
     final service = _service(provider);
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
 
-    final link = await service.resolveTorrentLink(_torrentLink());
+    final link = (await service.resolveTorrentLink(_torrentLink())).link;
     expect(link, isNotNull);
     expect(link!.isTorrent, isFalse);
     expect(link.url, 'https://cdn/x.iso');
@@ -89,43 +89,67 @@ void main() {
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
 
     var cachingSeen = 0;
-    final link = await service.resolveTorrentLink(
+    final result = await service.resolveTorrentLink(
       _torrentLink(),
       pollInterval: const Duration(milliseconds: 1),
       onCaching: (_) => cachingSeen++,
     );
-    expect(link?.url, 'https://cdn/y.iso');
+    expect(result.link?.url, 'https://cdn/y.iso');
     expect(cachingSeen, 1);
     expect(provider.calls, 2);
   });
 
-  test('not cached returns null', () async {
+  test('not cached fails with a reason', () async {
     final service = _service(_FakeProvider([const DebridNotCached()]));
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
-    expect(await service.resolveTorrentLink(_torrentLink()), isNull);
+    final result = await service.resolveTorrentLink(_torrentLink());
+    expect(result.link, isNull);
+    expect(result.failure, contains('Fake fake'));
   });
 
-  test('auth error returns null without polling', () async {
+  test('auth error fails with its message without polling', () async {
     final provider =
-        _FakeProvider([const DebridError('bad', authError: true)]);
+        _FakeProvider([const DebridError('bad key', authError: true)]);
     final service = _service(provider);
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
 
-    expect(await service.resolveTorrentLink(_torrentLink()), isNull);
+    final result = await service.resolveTorrentLink(_torrentLink());
+    expect(result.link, isNull);
+    expect(result.failure, 'bad key');
     expect(provider.calls, 1);
   });
 
-  test('times out to null while stuck caching', () async {
-    final provider = _FakeProvider([const DebridCaching()]);
+  test('gives up when caching stops making progress', () async {
+    final provider = _FakeProvider([const DebridCaching(progress: 0.2)]);
     final service = _service(provider);
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
 
-    final link = await service.resolveTorrentLink(
+    final result = await service.resolveTorrentLink(
       _torrentLink(),
       pollInterval: const Duration(milliseconds: 1),
-      overallTimeout: const Duration(milliseconds: 5),
+      maxPollInterval: const Duration(milliseconds: 1),
+      stallTimeout: const Duration(milliseconds: 20),
     );
-    expect(link, isNull);
+    expect(result.link, isNull);
+    expect(result.failure, contains('stopped making progress'));
+  });
+
+  test('keeps waiting past the stall window while progress moves', () async {
+    final provider = _FakeProvider([
+      for (var i = 1; i <= 15; i++) DebridCaching(progress: i / 20),
+      const DebridReady('https://cdn/slow.iso'),
+    ]);
+    final service = _service(provider);
+    await service.setCredentials(providerId: 'fake', apiKey: 'k');
+
+    final result = await service.resolveTorrentLink(
+      _torrentLink(),
+      pollInterval: const Duration(milliseconds: 5),
+      maxPollInterval: const Duration(milliseconds: 5),
+      stallTimeout: const Duration(milliseconds: 30),
+    );
+    expect(result.link?.url, 'https://cdn/slow.iso');
+    expect(provider.calls, 16);
   });
 
   test('synthesizes a magnet when the catalog has none', () async {
@@ -159,9 +183,11 @@ void main() {
     expect(await service.isConfigured(), isFalse);
   });
 
-  test('returns null when no debrid credentials are set', () async {
+  test('fails when no debrid credentials are set', () async {
     final service = _service(_FakeProvider([const DebridReady('x')]));
-    expect(await service.resolveTorrentLink(_torrentLink()), isNull);
+    final result = await service.resolveTorrentLink(_torrentLink());
+    expect(result.link, isNull);
+    expect(result.failure, 'No Fake fake API key saved');
   });
 
   test('cancellation aborts the poll promptly', () async {
@@ -180,7 +206,8 @@ void main() {
       onCaching: (_) => canceled = true, // cancel mid-poll
       isCancelled: () => canceled,
     );
-    expect(link, isNull);
+    expect(link.link, isNull);
+    expect(link.failure, isNull);
     expect(provider.calls, 1); // no further provider calls after cancel
   });
 
@@ -193,11 +220,12 @@ void main() {
       _torrentLink(),
       isCancelled: () => true,
     );
-    expect(link, isNull);
+    expect(link.link, isNull);
+    expect(link.failure, isNull);
     expect(provider.calls, 0);
   });
 
-  test('permanent error aborts the poll without waiting for timeout', () async {
+  test('permanent error aborts the poll without waiting', () async {
     final provider = _FakeProvider(
         [const DebridError('Active torrent limit', permanent: true)]);
     final service = _service(provider);
@@ -206,9 +234,9 @@ void main() {
     final link = await service.resolveTorrentLink(
       _torrentLink(),
       pollInterval: const Duration(milliseconds: 1),
-      overallTimeout: const Duration(milliseconds: 200),
     );
-    expect(link, isNull);
+    expect(link.link, isNull);
+    expect(link.failure, 'Active torrent limit');
     expect(provider.calls, 1); // terminal — no retry loop
   });
 
@@ -220,11 +248,11 @@ void main() {
     final service = _service(provider);
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
 
-    final link = await service.resolveTorrentLink(
+    final result = await service.resolveTorrentLink(
       _torrentLink(),
       pollInterval: const Duration(milliseconds: 1),
     );
-    expect(link?.url, 'https://cdn/z.iso');
+    expect(result.link?.url, 'https://cdn/z.iso');
     expect(provider.calls, 2);
   });
 
@@ -241,13 +269,13 @@ void main() {
 
     service.getSelectedProviderId = () => 'a';
     expect(await service.isConfigured(), isTrue);
-    expect((await service.resolveTorrentLink(_torrentLink()))?.url,
+    expect((await service.resolveTorrentLink(_torrentLink())).link?.url,
         'https://cdn/a');
 
     service.getSelectedProviderId = () => 'b';
     expect(await service.isConfigured(), isFalse);
     expect(await service.testConnection(), 'No API key set');
-    expect(await service.resolveTorrentLink(_torrentLink()), isNull);
+    expect((await service.resolveTorrentLink(_torrentLink())).link, isNull);
     expect(b.calls, 0);
 
     service.getSelectedProviderId = () => 'a';
@@ -268,19 +296,5 @@ void main() {
     expect(await service.isConfigured(), isTrue);
     expect(store.containsKey('debrid.credentials.v1'), isFalse);
     expect(store['debrid.credentials.v1.fake'], 'legacy-key');
-  });
-
-  test('isConfiguredSync reflects the selected provider once loaded',
-      () async {
-    final service = _service(_FakeProvider([const DebridNotCached()]));
-    expect(service.isConfiguredSync(), isFalse); // cache cold, no key
-    await service.isConfigured(); // warm the cache
-    expect(service.isConfiguredSync(), isFalse); // still no key saved
-
-    await service.setCredentials(providerId: 'fake', apiKey: 'k');
-    expect(service.isConfiguredSync(), isTrue);
-
-    await service.clearCredentials();
-    expect(service.isConfiguredSync(), isFalse);
   });
 }
