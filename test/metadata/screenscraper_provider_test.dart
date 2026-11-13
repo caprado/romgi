@@ -169,6 +169,28 @@ void main() {
     expect(query['devpassword'], 'dummy-devpass');
   });
 
+  test('a login error sent as text labelled JSON is reported as such',
+      () async {
+    final bad = stubbedDio(_base, {
+      _userInfo: (_) => jsonBody(
+            'Erreur de login : Vérifier les identifiants utilisateurs !',
+          ),
+    });
+    expect(
+      await ScreenScraperProvider(dio: bad).validateCredentials(_creds),
+      'Invalid ScreenScraper credentials',
+    );
+  });
+
+  test('a quota error sent as text labelled JSON is not a network error',
+      () async {
+    final result = await _fetch({
+      _search: (_) => jsonBody('Votre quota de scrape est dépassé'),
+    });
+    expect(result, isA<MetadataError>());
+    expect((result as MetadataError).message, 'ScreenScraper quota exceeded');
+  });
+
   test('validateCredentials accepts a working login and flags a bad one',
       () async {
     final ok = stubbedDio(_base, {
