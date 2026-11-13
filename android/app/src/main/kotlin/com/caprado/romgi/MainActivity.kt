@@ -14,6 +14,7 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var torrentService: TorrentServiceImpl? = null
+    private var vpnMonitor: VpnMonitor? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -28,6 +29,8 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
         )
         SevenZipHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, sevenZipService)
+
+        vpnMonitor = VpnMonitor(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OPEN_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -79,6 +82,8 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         torrentService?.shutdown()
         torrentService = null
+        vpnMonitor?.dispose()
+        vpnMonitor = null
         super.onDestroy()
     }
 

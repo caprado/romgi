@@ -22,6 +22,7 @@ import 'storage_service.dart';
 import 'torrent_info.dart';
 import 'torrent_magnet.dart';
 import 'torrent_service.dart';
+import 'vpn_service.dart';
 
 enum AddDownloadResult { added, duplicate }
 
@@ -52,6 +53,10 @@ class DownloadService {
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
   final DebridService? _debrid;
+  final VpnService? _vpn;
+  StreamSubscription<bool>? _vpnSub;
+  // Torrents paused because the VPN dropped; resumed when it comes back.
+  final Set<String> _vpnPausedIds = {};
   late final PlaylistWriter _playlistWriter;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
   final Dio _dio;
@@ -82,6 +87,7 @@ class DownloadService {
   final Map<String, int> _debridRelinkAttempts = {};
   static const int _maxDebridRelinkAttempts = 2;
   LinkResolverPrefs Function() getLinkResolverPrefs = () => const LinkResolverPrefs();
+  bool Function() requireVpnForTorrents = () => false;
 
   // Max concurrent downloads (0 = unlimited)
   int _maxConcurrentDownloads = 3;
@@ -101,6 +107,7 @@ class DownloadService {
     required TorrentService torrents,
     required SevenZipService sevenZip,
     DebridService? debrid,
+    VpnService? vpn,
     Dio? dio,
   })  : _db = db,
         _romDb = romDb,
@@ -110,11 +117,13 @@ class DownloadService {
         _torrents = torrents,
         _sevenZip = sevenZip,
         _debrid = debrid,
+        _vpn = vpn,
         _dio = dio ?? Dio() {
     _playlistWriter = PlaylistWriter(
       getGroupMembers: _db.getDownloadsByGroup,
       getPlatformDirectory: _storage.getPlatformDirectory,
     );
+    _vpnSub = _vpn?.changes.listen(_onVpnChanged);
   }
 
   Future<void> initialize() async {
@@ -459,6 +468,10 @@ class DownloadService {
       }
       if (prefs.torrentsDisabled) {
         await _failTask(task, 'Torrents are disabled');
+        return;
+      }
+      if (requireVpnForTorrents() && !(await _vpn?.isActive() ?? false)) {
+        await _failTask(task, 'Connect to a VPN to download torrents');
         return;
       }
       await _startTorrentDownload(task, adapter);
@@ -1452,6 +1465,26 @@ class DownloadService {
     }
   }
 
+  Future<void> _onVpnChanged(bool active) async {
+    if (!requireVpnForTorrents()) return;
+    if (!active) {
+      final p2p = _activeTasks.values
+          .where((t) => t.link.isTorrent && !t.resolvingDebrid)
+          .map((t) => t.id)
+          .toList();
+      for (final id in p2p) {
+        _vpnPausedIds.add(id);
+        await pauseDownload(id);
+      }
+      return;
+    }
+    final paused = _vpnPausedIds.toList();
+    _vpnPausedIds.clear();
+    for (final id in paused) {
+      await resumeDownload(id);
+    }
+  }
+
   Future<void> resumeDownload(String id) async {
     final task = await _db.getDownload(id);
     if (task != null && task.status == DownloadStatus.paused) {
@@ -1614,6 +1647,7 @@ class DownloadService {
   Future<bool> isDownloaded(String slug) => _db.isSlugDownloaded(slug);
 
   void dispose() {
+    _vpnSub?.cancel();
     _downloadController.close();
     _notifications.cancelAll();
   }
