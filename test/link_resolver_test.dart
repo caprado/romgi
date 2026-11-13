@@ -110,7 +110,7 @@ void main() {
       expect(ranked.last.notice, contains('login'));
     });
 
-    test('http and torrent break ties in favour of http', () {
+    test('http and torrent break ties in favor of http', () {
       final resolver = LinkResolver(sourcePriority: const {
         'minerva': 100,
         'internet_archive': 100,

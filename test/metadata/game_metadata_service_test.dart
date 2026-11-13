@@ -144,7 +144,7 @@ void main() {
     expect(db.puts, 1);
   });
 
-  test('no-match is cached and honoured with the shorter TTL', () async {
+  test('no-match is cached and honored with the shorter TTL', () async {
     final db = FakeDatabaseService();
     final provider = FakeMetadataProvider(() => const MetadataNoMatch());
     final service = _service([provider], db: db);

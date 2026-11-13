@@ -169,7 +169,7 @@ void main() {
     expect(query['devpassword'], 'dummy-devpass');
   });
 
-  test('a login error sent as text labelled JSON is reported as such',
+  test('a login error sent as text labeled JSON is reported as such',
       () async {
     final bad = stubbedDio(_base, {
       _userInfo: (_) => jsonBody(
@@ -182,7 +182,7 @@ void main() {
     );
   });
 
-  test('a quota error sent as text labelled JSON is not a network error',
+  test('a quota error sent as text labeled JSON is not a network error',
       () async {
     final result = await _fetch({
       _search: (_) => jsonBody('Votre quota de scrape est dépassé'),

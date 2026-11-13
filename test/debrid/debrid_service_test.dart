@@ -173,12 +173,12 @@ void main() {
     final service = _service(provider);
     await service.setCredentials(providerId: 'fake', apiKey: 'k');
 
-    var cancelled = false;
+    var canceled = false;
     final link = await service.resolveTorrentLink(
       _torrentLink(),
       pollInterval: const Duration(milliseconds: 1),
-      onCaching: (_) => cancelled = true, // cancel mid-poll
-      isCancelled: () => cancelled,
+      onCaching: (_) => canceled = true, // cancel mid-poll
+      isCancelled: () => canceled,
     );
     expect(link, isNull);
     expect(provider.calls, 1); // no further provider calls after cancel

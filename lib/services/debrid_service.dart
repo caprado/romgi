@@ -136,8 +136,8 @@ class DebridService {
     final apiKey = await _readKey(id);
     if (!provider.isConfigured(apiKey)) return null;
 
-    bool cancelled() => isCancelled?.call() ?? false;
-    if (cancelled()) return null;
+    bool canceled() => isCancelled?.call() ?? false;
+    if (canceled()) return null;
 
     final infohash = link.torrentInfohash!.toLowerCase();
     final req = DebridFileRequest(
@@ -153,9 +153,9 @@ class DebridService {
     var delay = pollInterval;
 
     while (true) {
-      if (cancelled()) return null;
+      if (canceled()) return null;
       final result = await provider.resolveFile(req, apiKey: apiKey!);
-      if (cancelled()) return null;
+      if (canceled()) return null;
 
       switch (result) {
         case DebridReady ready:

@@ -435,7 +435,7 @@ class DownloadService {
       if (prefs.debridEnabled && debrid != null) {
         if (await debrid.isConfigured()) {
           final resolved = await _tryResolveViaDebrid(task);
-          // Task may have been cancelled/paused during the resolution poll
+          // Task may have been canceled/paused during the resolution poll
           if (!_activeTasks.containsKey(task.id)) return;
           if (resolved != null) {
             // Re-enter with a plain HTTP link — adapterFor() now routes to HTTP.
@@ -721,7 +721,7 @@ class DownloadService {
       await _completeHttpDownload(task, downloadPath);
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel) {
-        // Download was paused/cancelled
+        // Download was paused/canceled
         if (_pausedTaskIds.contains(task.id)) {
           updatedTask = updatedTask.copyWith(status: DownloadStatus.paused);
           _pausedTaskIds.remove(task.id);
@@ -916,7 +916,7 @@ class DownloadService {
     }
 
     if (httpLink == null) return null;
-    // Cancelled/paused while the provider was finishing — discard the link
+    // Canceled/paused while the provider was finishing — discard the link
     if (cancelToken.isCancelled || !_activeTasks.containsKey(task.id)) {
       return null;
     }
@@ -1454,7 +1454,7 @@ class DownloadService {
       await _stopTorrentSubscription(task);
     }
     if (_activeTasks.containsKey(id)) {
-      _activeCancelTokens[id]?.cancel('Cancelled by user');
+      _activeCancelTokens[id]?.cancel('Canceled by user');
     }
 
     // Remove from active tasks

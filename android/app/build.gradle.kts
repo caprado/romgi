@@ -56,7 +56,7 @@ android {
     }
 
     packaging {
-        // libtorrent4j's sub-jars contain duplicate licence files;
+        // libtorrent4j's sub-jars contain duplicate license files;
         // exclude them so the resource merger doesn't fail.
         resources {
             excludes += listOf(

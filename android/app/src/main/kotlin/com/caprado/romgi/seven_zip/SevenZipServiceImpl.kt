@@ -25,7 +25,7 @@ class SevenZipServiceImpl(
     private val executor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "7z-extract").apply { isDaemon = true }
     }
-    private val cancelledPaths: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val canceledPaths: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override fun extract(
         archivePath: String,
@@ -38,7 +38,7 @@ class SevenZipServiceImpl(
             return
         }
 
-        cancelledPaths.remove(archivePath)
+        canceledPaths.remove(archivePath)
 
         executor.execute {
             try {
@@ -52,7 +52,7 @@ class SevenZipServiceImpl(
     }
 
     override fun cancel(archivePath: String) {
-        cancelledPaths.add(archivePath)
+        canceledPaths.add(archivePath)
     }
 
     private fun doExtract(archiveFile: File, outputDir: File): String {
@@ -91,8 +91,8 @@ class SevenZipServiceImpl(
             var entry = zis.nextEntry
 
             while (entry != null) {
-                if (cancelledPaths.contains(archivePath)) {
-                    throw Exception("Extraction cancelled")
+                if (canceledPaths.contains(archivePath)) {
+                    throw Exception("Extraction canceled")
                 }
 
                 val outFile = File(outputDir, entry.name)
@@ -110,8 +110,8 @@ class SevenZipServiceImpl(
                     FileOutputStream(outFile).use { fos ->
                         var len: Int
                         while (zis.read(buffer).also { len = it } > 0) {
-                            if (cancelledPaths.contains(archivePath)) {
-                                throw Exception("Extraction cancelled")
+                            if (canceledPaths.contains(archivePath)) {
+                                throw Exception("Extraction canceled")
                             }
                             fos.write(buffer, 0, len)
                             bytesExtracted += len
@@ -146,7 +146,7 @@ class SevenZipServiceImpl(
             ) { }
         }
 
-        cancelledPaths.remove(archivePath)
+        canceledPaths.remove(archivePath)
 
         // Prefer the files we just wrote (handles re-extraction where
         // files already existed before extraction started).
@@ -190,8 +190,8 @@ class SevenZipServiceImpl(
             var entry: SevenZArchiveEntry? = szf.nextEntry
 
             while (entry != null) {
-                if (cancelledPaths.contains(archivePath)) {
-                    throw Exception("Extraction cancelled")
+                if (canceledPaths.contains(archivePath)) {
+                    throw Exception("Extraction canceled")
                 }
 
                 val outFile = File(outputDir, entry.name)
@@ -209,8 +209,8 @@ class SevenZipServiceImpl(
                     FileOutputStream(outFile).use { fos ->
                         var len: Int
                         while (szf.read(buffer).also { len = it } > 0) {
-                            if (cancelledPaths.contains(archivePath)) {
-                                throw Exception("Extraction cancelled")
+                            if (canceledPaths.contains(archivePath)) {
+                                throw Exception("Extraction canceled")
                             }
                             fos.write(buffer, 0, len)
                             bytesExtracted += len
@@ -247,7 +247,7 @@ class SevenZipServiceImpl(
             ) { }
         }
 
-        cancelledPaths.remove(archivePath)
+        canceledPaths.remove(archivePath)
 
         // Prefer the files we just wrote (handles re-extraction where
         // files already existed before extraction started).

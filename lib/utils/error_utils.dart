@@ -40,7 +40,7 @@ class ErrorUtils {
       case DioExceptionType.badResponse:
         return _getHttpErrorMessage(error.response?.statusCode);
       case DioExceptionType.cancel:
-        return 'Request was cancelled.';
+        return 'Request was canceled.';
       case DioExceptionType.connectionError:
         return 'Unable to connect. Please check your internet connection.';
       case DioExceptionType.unknown:

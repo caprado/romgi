@@ -20,7 +20,7 @@ class ScreenScraperProvider extends GameMetadataProvider {
               validateStatus: (code) => code != null && code < 500,
             ));
 
-  /// Errors come back as plain text labelled as JSON; read every reply as
+  /// Errors come back as plain text labeled as JSON; read every reply as
   /// text and parse it in [_decoded] instead of letting Dio throw.
   static final Options _plain = Options(responseType: ResponseType.plain);
 

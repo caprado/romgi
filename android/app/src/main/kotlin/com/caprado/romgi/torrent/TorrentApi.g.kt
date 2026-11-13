@@ -204,7 +204,7 @@ data class TorrentSettings (
  */
 data class AddTorrentRequest (
   val magnet: String? = null,
-  /** Raw .torrent bytes. Honoured when [magnet] is null. */
+  /** Raw .torrent bytes. Honored when [magnet] is null. */
   val torrentBytes: ByteArray? = null,
   /**
    * File indices to download. Every other file's priority is set to 0.

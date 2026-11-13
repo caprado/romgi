@@ -1038,7 +1038,7 @@ class _DownloadLinkCard extends ConsumerWidget {
           }
           return;
         } else {
-          return; // User cancelled
+          return; // User canceled
         }
       }
     }
