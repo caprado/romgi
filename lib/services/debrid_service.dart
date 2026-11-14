@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -99,18 +98,6 @@ class DebridService {
     return provider.isConfigured(await _readKey(id));
   }
 
-  /// Cache-backed; returns false until [isConfigured] has run once.
-  bool isConfiguredSync({String? providerId}) {
-    final id = providerId ?? getSelectedProviderId();
-    final provider = _registry.byId(id);
-    if (provider == null) return false;
-    if (!_loadedIds.contains(id)) {
-      unawaited(_readKey(id));
-      return false;
-    }
-    return provider.isConfigured(_cachedKeys[id]);
-  }
-
   Future<String?> testConnection({String? providerId}) async {
     final id = providerId ?? getSelectedProviderId();
     final provider = _registry.byId(id);
@@ -121,23 +108,33 @@ class DebridService {
     return provider.validateKey(key!);
   }
 
-  Future<DownloadLink?> resolveTorrentLink(
+  /// Polls until the provider has the file. Uncached torrents can take hours,
+  /// so there is no overall deadline; it gives up only when caching stops
+  /// making progress for [stallTimeout]. [DebridResolution.link] is null on
+  /// failure or cancel, with [DebridResolution.failure] set on failure.
+  Future<DebridResolution> resolveTorrentLink(
     DownloadLink link, {
     void Function(DebridCaching status)? onCaching,
     bool Function()? isCancelled,
-    Duration overallTimeout = const Duration(minutes: 3),
+    Duration stallTimeout = const Duration(minutes: 30),
     Duration pollInterval = const Duration(seconds: 2),
+    Duration maxPollInterval = const Duration(seconds: 30),
   }) async {
-    if (!link.isTorrent) return null;
+    if (!link.isTorrent) return const DebridResolution.failed('Not a torrent link');
 
     final id = getSelectedProviderId();
     final provider = _registry.byId(id);
-    if (provider == null) return null;
+    if (provider == null) {
+      return const DebridResolution.failed('No debrid provider selected');
+    }
+    final name = provider.info.name;
     final apiKey = await _readKey(id);
-    if (!provider.isConfigured(apiKey)) return null;
+    if (!provider.isConfigured(apiKey)) {
+      return DebridResolution.failed('No $name API key saved');
+    }
 
-    bool cancelled() => isCancelled?.call() ?? false;
-    if (cancelled()) return null;
+    bool canceled() => isCancelled?.call() ?? false;
+    if (canceled()) return const DebridResolution.canceled();
 
     final infohash = link.torrentInfohash!.toLowerCase();
     final req = DebridFileRequest(
@@ -148,33 +145,45 @@ class DebridService {
       expectedSize: link.size,
     );
 
-    final deadline = DateTime.now().add(overallTimeout);
-    const maxDelay = Duration(seconds: 15);
+    var lastProgress = -1.0;
+    var lastProgressAt = DateTime.now();
     var delay = pollInterval;
+    String? lastError;
+
+    bool stalled() => DateTime.now().difference(lastProgressAt) > stallTimeout;
 
     while (true) {
-      if (cancelled()) return null;
+      if (canceled()) return const DebridResolution.canceled();
       final result = await provider.resolveFile(req, apiKey: apiKey!);
-      if (cancelled()) return null;
+      if (canceled()) return const DebridResolution.canceled();
 
       switch (result) {
         case DebridReady ready:
-          return _toHttpLink(link, ready, provider.info.name);
+          return DebridResolution.ready(_toHttpLink(link, ready, name));
         case DebridNotCached():
-          return null;
+          return DebridResolution.failed(
+              "$name couldn't find this file in the torrent");
         case DebridCaching caching:
           onCaching?.call(caching);
-          if (DateTime.now().isAfter(deadline)) return null;
+          final progress = caching.progress ?? 0;
+          if (progress > lastProgress) {
+            lastProgress = progress;
+            lastProgressAt = DateTime.now();
+          } else if (stalled()) {
+            return DebridResolution.failed(
+                '$name stopped making progress caching this torrent');
+          }
           await Future.delayed(caching.retryAfter ?? delay);
-          delay = _nextDelay(delay, maxDelay);
+          delay = _nextDelay(delay, maxPollInterval);
         case DebridError error:
           if (error.authError || error.permanent) {
-            return null; // bad key or terminal error — polling won't help
+            return DebridResolution.failed(error.message);
           }
-          if (DateTime.now().isAfter(deadline)) return null;
+          lastError = error.message;
+          if (stalled()) return DebridResolution.failed(lastError);
           await Future.delayed(
               error.rateLimited ? const Duration(seconds: 10) : delay);
-          delay = _nextDelay(delay, maxDelay);
+          delay = _nextDelay(delay, maxPollInterval);
       }
     }
   }
@@ -197,4 +206,15 @@ class DebridService {
       size: ready.size ?? original.size,
     );
   }
+}
+
+class DebridResolution {
+  final DownloadLink? link;
+  final String? failure;
+
+  const DebridResolution.ready(DownloadLink this.link) : failure = null;
+  const DebridResolution.failed(String this.failure) : link = null;
+  const DebridResolution.canceled()
+      : link = null,
+        failure = null;
 }

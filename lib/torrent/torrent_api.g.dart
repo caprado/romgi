@@ -217,7 +217,7 @@ class AddTorrentRequest {
 
   String? magnet;
 
-  /// Raw .torrent bytes. Honoured when [magnet] is null.
+  /// Raw .torrent bytes. Honored when [magnet] is null.
   Uint8List? torrentBytes;
 
   /// File indices to download. Every other file's priority is set to 0.

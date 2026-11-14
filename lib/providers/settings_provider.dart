@@ -12,6 +12,7 @@ class SettingsState {
   final List<String> defaultRegions;
   final int maxConcurrentDownloads;
   final bool torrentsDisabled;
+  final bool torrentsRequireVpn;
   final bool autoExtractDisabled;
   final Set<String> extractDisabledPlatforms;
   final bool debridEnabled;
@@ -27,6 +28,7 @@ class SettingsState {
     this.defaultRegions = const [],
     this.maxConcurrentDownloads = 3,
     this.torrentsDisabled = false,
+    this.torrentsRequireVpn = false,
     this.autoExtractDisabled = false,
     this.extractDisabledPlatforms = const {},
     this.debridEnabled = false,
@@ -49,6 +51,7 @@ class SettingsState {
     List<String>? defaultRegions,
     int? maxConcurrentDownloads,
     bool? torrentsDisabled,
+    bool? torrentsRequireVpn,
     bool? autoExtractDisabled,
     Set<String>? extractDisabledPlatforms,
     bool? debridEnabled,
@@ -67,6 +70,7 @@ class SettingsState {
       maxConcurrentDownloads:
           maxConcurrentDownloads ?? this.maxConcurrentDownloads,
       torrentsDisabled: torrentsDisabled ?? this.torrentsDisabled,
+      torrentsRequireVpn: torrentsRequireVpn ?? this.torrentsRequireVpn,
       autoExtractDisabled: autoExtractDisabled ?? this.autoExtractDisabled,
       extractDisabledPlatforms:
           extractDisabledPlatforms ?? this.extractDisabledPlatforms,
@@ -101,6 +105,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyDefaultRegions = 'default_regions';
   static const String _keyMaxConcurrentDownloads = 'max_concurrent_downloads';
   static const String _keyTorrentsDisabled = 'torrents_disabled';
+  static const String _keyTorrentsRequireVpn = 'torrents_require_vpn';
   static const String _keyAutoExtractDisabled = 'auto_extract_disabled';
   static const String _keyExtractDisabledPlatforms =
       'extract_disabled_platform_';
@@ -132,6 +137,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final maxConcurrentDownloads =
         prefs.getInt(_keyMaxConcurrentDownloads) ?? 3;
     final torrentsDisabled = prefs.getBool(_keyTorrentsDisabled) ?? false;
+    final torrentsRequireVpn = prefs.getBool(_keyTorrentsRequireVpn) ?? false;
     final autoExtractDisabled =
         prefs.getBool(_keyAutoExtractDisabled) ?? false;
     final debridEnabled = prefs.getBool(_keyDebridEnabled) ?? false;
@@ -161,6 +167,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       defaultRegions: defaultRegions,
       maxConcurrentDownloads: maxConcurrentDownloads,
       torrentsDisabled: torrentsDisabled,
+      torrentsRequireVpn: torrentsRequireVpn,
       autoExtractDisabled: autoExtractDisabled,
       extractDisabledPlatforms: extractDisabledPlatforms,
       debridEnabled: debridEnabled,
@@ -243,6 +250,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(torrentsDisabled: value);
   }
 
+  Future<void> setTorrentsRequireVpn(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyTorrentsRequireVpn, value);
+    state = state.copyWith(torrentsRequireVpn: value);
+  }
+
   Future<void> setDebridEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyDebridEnabled, value);
@@ -276,6 +289,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDefaultRegions);
     await prefs.remove(_keyMaxConcurrentDownloads);
     await prefs.remove(_keyTorrentsDisabled);
+    await prefs.remove(_keyTorrentsRequireVpn);
     await prefs.remove(_keyAutoExtractDisabled);
     await prefs.remove(_keyDebridEnabled);
     await prefs.remove(_keyDebridProviderId);

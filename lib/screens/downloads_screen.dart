@@ -447,6 +447,12 @@ class _FailedDownloadTile extends ConsumerWidget {
                 ref.read(downloadProvider.notifier).retryDownload(task.id);
               },
             ),
+          if (task.needsP2pApproval)
+            IconButton(
+              icon: const Icon(Icons.hub_outlined),
+              tooltip: 'Download via torrent',
+              onPressed: () => _confirmTorrent(context, ref),
+            ),
           IconButton(
             icon: const Icon(Icons.close),
             tooltip: 'Remove',
@@ -457,6 +463,32 @@ class _FailedDownloadTile extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmTorrent(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Download via torrent?'),
+        content: const Text(
+          'Your debrid service could not get this file. Downloading it over '
+          'P2P shares your IP address with other peers.'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Use torrent'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      ref.read(downloadProvider.notifier).downloadViaTorrent(task.id);
+    }
   }
 
   Future<void> _loginAndRetry(BuildContext context, WidgetRef ref) async {

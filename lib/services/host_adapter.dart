@@ -3,7 +3,7 @@ import 'dart:async';
 import '../models/download_link.dart';
 import 'internet_archive_auth_manager.dart';
 
-/// Per-host hooks that customise the HTTP download flow.
+/// Per-host hooks that customize the HTTP download flow.
 ///
 /// Adapters that handle a fundamentally different transport (currently
 /// only [TorrentAdapter]) set [isTorrent] to true; the download service

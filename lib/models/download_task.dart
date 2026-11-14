@@ -33,6 +33,10 @@ class DownloadTask {
   final String? groupTitle;
   // Disc count of the group at queue time.
   final int? groupTotal;
+  // User explicitly chose P2P after debrid couldn't deliver this file.
+  final bool p2pApproved;
+  // Debrid failed and torrents are allowed; the UI offers P2P instead.
+  final bool needsP2pApproval;
   // Torrent-only, in-memory only (not persisted). -1 means "unknown"
   // so the UI can distinguish a fresh torrent task from "0 peers".
   final int peers;
@@ -61,6 +65,8 @@ class DownloadTask {
     this.groupIndex,
     this.groupTitle,
     this.groupTotal,
+    this.p2pApproved = false,
+    this.needsP2pApproval = false,
     this.peers = -1,
     this.seeds = -1,
     this.fetchingMetadata = false,
@@ -82,6 +88,8 @@ class DownloadTask {
     int? groupIndex,
     String? groupTitle,
     int? groupTotal,
+    bool? p2pApproved,
+    bool? needsP2pApproval,
     int? peers,
     int? seeds,
     bool? fetchingMetadata,
@@ -108,6 +116,8 @@ class DownloadTask {
       groupIndex: groupIndex ?? this.groupIndex,
       groupTitle: groupTitle ?? this.groupTitle,
       groupTotal: groupTotal ?? this.groupTotal,
+      p2pApproved: p2pApproved ?? this.p2pApproved,
+      needsP2pApproval: needsP2pApproval ?? this.needsP2pApproval,
       peers: peers ?? this.peers,
       seeds: seeds ?? this.seeds,
       fetchingMetadata: fetchingMetadata ?? this.fetchingMetadata,
@@ -150,6 +160,8 @@ class DownloadTask {
       'group_index': groupIndex,
       'group_title': groupTitle,
       'group_total': groupTotal,
+      'p2p_approved': p2pApproved ? 1 : 0,
+      'needs_p2p_approval': needsP2pApproval ? 1 : 0,
     };
   }
 
@@ -192,6 +204,8 @@ class DownloadTask {
       groupIndex: map['group_index'] as int?,
       groupTitle: map['group_title'] as String?,
       groupTotal: map['group_total'] as int?,
+      p2pApproved: (map['p2p_approved'] as int? ?? 0) != 0,
+      needsP2pApproval: (map['needs_p2p_approval'] as int? ?? 0) != 0,
     );
   }
 

@@ -7,7 +7,7 @@ class _FakeHostApi extends TorrentHostApi {
   TorrentSettings? lastStart;
   TorrentSettings? lastUpdate;
   AddTorrentRequest? lastAdd;
-  final List<String> cancelled = [];
+  final List<String> canceled = [];
   bool pausedAll = false;
   bool resumedAll = false;
   List<TorrentProgress> snapshot = const [];
@@ -31,7 +31,7 @@ class _FakeHostApi extends TorrentHostApi {
 
   @override
   Future<void> cancel(String infohash) async {
-    cancelled.add(infohash);
+    canceled.add(infohash);
   }
 
   @override
@@ -186,7 +186,7 @@ void main() {
       expect(svc.latest, contains('aa'));
 
       await svc.cancel('aa');
-      expect(fake.cancelled, ['aa']);
+      expect(fake.canceled, ['aa']);
       expect(svc.latest, isNot(contains('aa')));
     });
 

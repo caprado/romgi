@@ -85,6 +85,21 @@ class SettingsScreen extends ConsumerWidget {
                   },
                 ),
 
+                if (!settings.torrentsDisabled)
+                  SwitchListTile(
+                    secondary: const Icon(Icons.vpn_lock),
+                    title: const Text('Only Torrent Over VPN'),
+                    subtitle: const Text(
+                      "Won't start torrents without a VPN and pauses them if it drops",
+                    ),
+                    value: settings.torrentsRequireVpn,
+                    onChanged: (value) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setTorrentsRequireVpn(value);
+                    },
+                  ),
+
                 SwitchListTile(
                   secondary: const Icon(Icons.unarchive),
                   title: const Text('Disable Auto-Extract'),
