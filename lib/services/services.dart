@@ -16,3 +16,4 @@ export 'sources_service.dart';
 export 'storage_service.dart';
 export 'torrent_service.dart';
 export 'update_service.dart';
+export 'vpn_service.dart';

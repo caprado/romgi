@@ -59,6 +59,7 @@ final downloadServiceProvider = Provider<DownloadService>((ref) {
     torrents: torrents,
     sevenZip: sevenZip,
     debrid: debrid,
+    vpn: VpnService(),
   );
 });
 
@@ -293,6 +294,7 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
   final settings = ref.watch(settingsProvider);
   service.shouldExtractForPlatform =
       (platform) => settings.shouldExtractForPlatform(platform);
+  service.requireVpnForTorrents = () => settings.torrentsRequireVpn;
   service.getLinkResolverPrefs = () => LinkResolverPrefs(
         torrentsDisabled: settings.torrentsDisabled,
         debridEnabled: settings.debridEnabled,
